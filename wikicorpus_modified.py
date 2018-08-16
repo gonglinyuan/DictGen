@@ -35,7 +35,7 @@ from gensim.corpora.textcorpus import TextCorpus
 
 logger = logging.getLogger(__name__)
 
-ARTICLE_MIN_WORDS = 2
+ARTICLE_MIN_WORDS = 5
 """Ignore shorter articles (after full preprocessing)."""
 
 # default thresholds for lengths of individual tokens
@@ -602,12 +602,16 @@ class WikiCorpus(TextCorpus):
                     if len(tokens) < self.article_min_tokens or \
                             any(title.startswith(ignore + ':') for ignore in IGNORED_NAMESPACES):
                         continue
-                    articles += 1
-                    positions += len(tokens)
-                    if self.metadata:
-                        yield (tokens, (pageid, title))
-                    else:
-                        yield tokens
+                    for sentence in tokens:
+                        if len(sentence) < self.article_min_tokens or \
+                                any(title.startswith(ignore + ':') for ignore in IGNORED_NAMESPACES):
+                            continue
+                        articles += 1
+                        positions += len(sentence)
+                        if self.metadata:
+                            yield (sentence, (pageid, title))
+                        else:
+                            yield sentence
 
         except KeyboardInterrupt:
             logger.warn(
