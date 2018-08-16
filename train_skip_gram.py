@@ -5,8 +5,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 
-from .corpus_data import CorpusData, concat_collate
-from .skip_gram import SkipGram
+from corpus_data import CorpusData, concat_collate
+from skip_gram import SkipGram
 
 GPU = torch.device("cuda:0")
 CPU = torch.device("cpu")

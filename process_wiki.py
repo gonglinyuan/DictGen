@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from tqdm import trange, tqdm
 
-from .wikicorpus_modified import WikiCorpus
+from wikicorpus_modified import WikiCorpus
 
 if __name__ == "__main__":
     lang = sys.argv[1]
