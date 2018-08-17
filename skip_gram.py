@@ -12,8 +12,8 @@ class SkipGram(nn.Module):
         self.emb_dim = emb_dim
         self.u = nn.Embedding(vocab_size, emb_dim, sparse=True)
         self.v = nn.Embedding(vocab_size, emb_dim, sparse=True)
-        nn.init.normal_(self.u.weight, mean=0, std=1.0)
-        nn.init.zeros_(self.v.weight)
+        nn.init.normal_(self.u.weight, mean=0, std=emb_dim ** (-0.25))
+        nn.init.normal_(self.v.weight, mean=0, std=emb_dim ** (-0.25))
 
     def forward(self, pos_u, pos_v, neg_v):
         # pos_u: Long[bs, 1]
