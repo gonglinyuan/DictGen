@@ -31,8 +31,19 @@ class NegativeSampling:
         return neg
 
 
+def get_discard_table(dic, n_tokens, threshold):
+    p_discard = np.zeros(len(dic))
+    for i in range(len(dic)):
+        p_discard[i] = dic[i][1] / n_tokens
+    p_discard = threshold / p_discard
+    p_discard = p_discard ** 0.5 + p_discard
+    p_discard = 1.0 - p_discard
+    p_discard = np.maximum(p_discard, 0.0, out=p_discard)
+    return p_discard
+
+
 class CorpusData(Dataset):
-    def __init__(self, corpus_path, dic_path, *, max_ws, n_ns, n_negatives=10000000, shuffle=False):
+    def __init__(self, corpus_path, dic_path, *, max_ws, n_ns, threshold, n_negatives=10000000, shuffle=False):
         self.corpus = torch.load(corpus_path)
         self.dic = torch.load(dic_path)
         self.vocab_size = len(self.dic)
@@ -40,13 +51,15 @@ class CorpusData(Dataset):
         self.max_ws = max_ws
         self.n_ns = n_ns
         self.shuffle = shuffle
-        for doc in self.corpus:
-            for i in range(len(doc)):
-                if doc[i] == -1:
-                    doc[i] = self.vocab_size
+        self.n_tokens = sum([len(doc) for doc in self.corpus])
+        self.p_discard = get_discard_table(self.dic, self.n_tokens, threshold)
+        for i in range(len(self.corpus)):
+            self.corpus[i] = [w if w != -1 else self.vocab_size
+                              for w in self.corpus[i]]
 
     def __getitem__(self, index):
         doc = self.corpus[index]
+        doc = [w for w in doc if w == self.vocab_size or np.random.rand() >= self.p_discard[w]]
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
         for i in range(len(doc)):
             pos_u = doc[i]

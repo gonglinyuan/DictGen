@@ -1,10 +1,9 @@
 import argparse
 
 import torch
-import torch.optim as optim
+import visdom
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
-import visdom
 
 import optimizers
 from corpus_data import CorpusData, concat_collate
@@ -27,9 +26,11 @@ if __name__ == "__main__":
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
     parser.add_argument("--log_path", type=str, default="log.txt", help="path of logs")
+    parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
     params = parser.parse_args()
 
-    corpus_data = CorpusData(params.corpus_path, params.dic_path, max_ws=params.max_ws, n_ns=params.n_ns)
+    corpus_data = CorpusData(params.corpus_path, params.dic_path, max_ws=params.max_ws, n_ns=params.n_ns,
+                             threshold=params.threshold)
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
                              num_workers=params.n_threads, pin_memory=True)
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
