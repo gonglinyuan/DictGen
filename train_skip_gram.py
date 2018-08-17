@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, help="initial learning rate")
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
+    parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
     parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
@@ -44,7 +45,8 @@ if __name__ == "__main__":
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
     optimizer, scheduler = optimizers.get(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
 
-    vis = visdom.Visdom(port=params.vis_port, log_to_filename=os.path.join(params.out_path, "log.txt"))
+    vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
+                        log_to_filename=os.path.join(params.out_path, "log.txt"))
     for epoch in trange(params.n_epochs, desc="epoch"):
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
             scheduler.step()
