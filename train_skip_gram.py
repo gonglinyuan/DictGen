@@ -1,4 +1,6 @@
 import argparse
+import os
+from datetime import datetime
 
 import torch
 import visdom
@@ -13,9 +15,12 @@ GPU = torch.device("cuda:0")
 CPU = torch.device("cpu")
 
 if __name__ == "__main__":
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+
     parser = argparse.ArgumentParser(description="train skip-gram only")
     parser.add_argument("corpus_path", type=str, help="path of corpus")
     parser.add_argument("dic_path", type=str, help="path of dictionary")
+    parser.add_argument("out_path", type=str, default=timestamp, help="path of all outputs")
     parser.add_argument("--max_ws", type=int, help="max window size")
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
     parser.add_argument("--n_threads", type=int, help="number of data loader threads")
@@ -25,9 +30,12 @@ if __name__ == "__main__":
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
-    parser.add_argument("--log_path", type=str, default="log.txt", help="path of logs")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
+    parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
     params = parser.parse_args()
+
+    if not os.path.exists(params.out_path):
+        os.mkdir(params.out_path)
 
     corpus_data = CorpusData(params.corpus_path, params.dic_path, max_ws=params.max_ws, n_ns=params.n_ns,
                              threshold=params.threshold)
@@ -36,7 +44,7 @@ if __name__ == "__main__":
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
     optimizer, scheduler = optimizers.get(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
 
-    vis = visdom.Visdom(port=params.vis_port, log_to_filename=params.log_path)
+    vis = visdom.Visdom(port=params.vis_port, log_to_filename=os.path.join(params.out_path, "log.txt"))
     for epoch in trange(params.n_epochs, desc="epoch"):
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
             scheduler.step()
@@ -54,3 +62,7 @@ if __name__ == "__main__":
                 loss.backward()
                 optimizer.step()
             vis.line(torch.FloatTensor([loss1 / loss0]), win="loss", update="append")
+        if params.checkpoint:
+            torch.save(model.state_dict(), os.path.join(params.out_path, f"model-epoch{epoch}.pt"))
+
+    torch.save(model.state_dict(), os.path.join(params.out_path, f"model.pt"))
