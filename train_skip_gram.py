@@ -50,7 +50,7 @@ if __name__ == "__main__":
     for epoch in trange(params.n_epochs, desc="epoch"):
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
             scheduler.step()
-            vis.line(torch.FloatTensor(scheduler.factor * params.lr), win="lr", update="append")
+            vis.line(torch.FloatTensor([scheduler.factor * params.lr]), win="lr", update="append")
             loss0, loss1 = 0, 0.0
             for i in range(pos_u.shape[0] // params.bs):
                 optimizer.zero_grad()
