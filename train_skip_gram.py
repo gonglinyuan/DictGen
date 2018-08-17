@@ -64,8 +64,10 @@ if __name__ == "__main__":
                 loss.backward()
                 optimizer.step()
             if loss0 >= out_freq:
-                vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]), win="lr", update="append")
-                vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]), win="loss", update="append")
+                vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]),
+                         win=f"{params.out_path}.lr", update="append")
+                vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]),
+                         win=f"{params.out_path}.loss", update="append")
                 loss0, loss1 = 0, 0.0
                 step += 1
         if params.checkpoint:
