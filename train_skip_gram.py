@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="train skip-gram only")
     parser.add_argument("corpus_path", type=str, help="path of corpus")
     parser.add_argument("dic_path", type=str, help="path of dictionary")
-    parser.add_argument("out_path", type=str, default=timestamp, help="path of all outputs")
+    parser.add_argument("--out_path", type=str, default=timestamp, help="path of all outputs")
     parser.add_argument("--max_ws", type=int, help="max window size")
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
     parser.add_argument("--n_threads", type=int, help="number of data loader threads")
