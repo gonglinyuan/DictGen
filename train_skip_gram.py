@@ -47,11 +47,11 @@ if __name__ == "__main__":
 
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(params.out_path, "log.txt"))
+    out_freq = (len(data_loader) + 99) // 100
+    loss0, loss1, step = 0, 0.0, 0
     for epoch in trange(params.n_epochs, desc="epoch"):
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
             scheduler.step()
-            vis.line(torch.FloatTensor([scheduler.factor * params.lr]), win="lr", update="append")
-            loss0, loss1 = 0, 0.0
             for i in range(pos_u.shape[0] // params.bs):
                 optimizer.zero_grad()
                 pos_u_b = pos_u[i * params.bs: (i + 1) * params.bs].to(GPU)
@@ -63,7 +63,11 @@ if __name__ == "__main__":
                 loss1 += loss.item()
                 loss.backward()
                 optimizer.step()
-            vis.line(torch.FloatTensor([loss1 / loss0]), win="loss", update="append")
+            if loss0 >= out_freq:
+                vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]), win="lr", update="append")
+                vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]), win="loss", update="append")
+                loss0, loss1 = 0, 0.0
+                step += 1
         if params.checkpoint:
             torch.save(model.state_dict(), os.path.join(params.out_path, f"model-epoch{epoch}.pt"))
 
