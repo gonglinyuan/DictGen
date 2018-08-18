@@ -35,6 +35,8 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
     params = parser.parse_args()
 
+    print(params)
+
     if not os.path.exists(params.out_path):
         os.mkdir(params.out_path)
 
@@ -51,6 +53,7 @@ if __name__ == "__main__":
     loss0, loss1, step = 0, 0.0, 0
     for epoch in trange(params.n_epochs, desc="epoch"):
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
+            print(f"epoch {epoch} ; out_path = {params.out_path}")
             scheduler.step()
             for i in range(pos_u.shape[0] // params.bs):
                 optimizer.zero_grad()
@@ -65,12 +68,13 @@ if __name__ == "__main__":
                 optimizer.step()
             if loss0 >= out_freq:
                 vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]),
-                         win=f"{params.out_path}.lr", update="append")
+                         win="lr", env=params.out_path, update="append")
                 vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]),
-                         win=f"{params.out_path}.loss", update="append")
+                         win="loss", env=params.out_path, update="append")
                 loss0, loss1 = 0, 0.0
                 step += 1
         if params.checkpoint:
             torch.save(model.state_dict(), os.path.join(params.out_path, f"model-epoch{epoch}.pt"))
 
     torch.save(model.state_dict(), os.path.join(params.out_path, f"model.pt"))
+    print(params)
