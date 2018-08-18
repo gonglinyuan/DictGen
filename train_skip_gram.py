@@ -52,8 +52,8 @@ if __name__ == "__main__":
     out_freq = (len(data_loader) + 99) // 100
     loss0, loss1, step = 0, 0.0, 0
     for epoch in trange(params.n_epochs, desc="epoch"):
+        print(f"epoch {epoch} ; out_path = {params.out_path}")
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
-            print(f"epoch {epoch} ; out_path = {params.out_path}")
             scheduler.step()
             for i in range(pos_u.shape[0] // params.bs):
                 optimizer.zero_grad()
