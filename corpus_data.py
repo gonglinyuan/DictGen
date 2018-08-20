@@ -67,19 +67,19 @@ class CorpusData(Dataset):
             for j in range(-ws, ws + 1):
                 if j != 0 and 0 <= i + j < doc.shape[0]:
                     pos_v = doc[i + j].item()
-                    neg_v = torch.IntTensor(self.n_ns)
+                    neg_v = torch.LongTensor(self.n_ns)
                     for k in range(self.n_ns):
                         neg_v[k] = int(self.negative_sampler.sample(pos_v))
                     pos_u_b.append(pos_u)
                     pos_v_b.append(pos_v)
                     neg_v_b.append(neg_v)
                     c += 1
-        pos_u_b = torch.IntTensor(pos_u_b).view(c, 1)
-        pos_v_b = torch.IntTensor(pos_v_b).view(c, 1)
+        pos_u_b = torch.LongTensor(pos_u_b).view(c, 1)
+        pos_v_b = torch.LongTensor(pos_v_b).view(c, 1)
         if c > 0:
             neg_v_b = torch.stack(neg_v_b).view(c, self.n_ns)
         else:
-            neg_v_b = torch.IntTensor([]).view(c, self.n_ns)
+            neg_v_b = torch.LongTensor([]).view(c, self.n_ns)
         if self.shuffle:
             perm = torch.randperm(c)
             return pos_u_b[perm], pos_v_b[perm], neg_v_b[perm]
