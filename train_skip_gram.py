@@ -43,7 +43,7 @@ if __name__ == "__main__":
     corpus_data = CorpusData(params.corpus_path, params.dic_path, max_ws=params.max_ws, n_ns=params.n_ns,
                              threshold=params.threshold)
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
-                             num_workers=params.n_threads, pin_memory=True)
+                             num_workers=params.n_threads, pin_memory=True, shuffle=True)
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
     optimizer, scheduler = optimizers.get(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
 
