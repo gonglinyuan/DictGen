@@ -76,6 +76,7 @@ class CorpusData(Dataset):
                     c += 1
         pos_u_b = torch.IntTensor(pos_u_b).view(c, 1)
         pos_v_b = torch.IntTensor(pos_v_b).view(c, 1)
+        print(len(neg_v_b), neg_v_b[0])
         neg_v_b = torch.stack(neg_v_b).view(c, self.n_ns)
         if self.shuffle:
             perm = torch.randperm(c)
