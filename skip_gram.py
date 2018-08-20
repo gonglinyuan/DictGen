@@ -16,13 +16,13 @@ class SkipGram(nn.Module):
         nn.init.normal_(self.v.weight, mean=0, std=emb_dim ** (-0.25))
 
     def forward(self, pos_u, pos_v, neg_v):
-        # pos_u: Long[bs, 1]
-        # pos_v: Long[bs, 1]
-        # neg_v: Long[bs, 5]
+        # pos_u: Int[bs, 1]
+        # pos_v: Int[bs, 1]
+        # neg_v: Int[bs, 5]
         bs = pos_u.shape[0]
-        emb_pos_u = self.u(pos_u)  # emb_pos_u: Float[bs, 1, d]
-        emb_pos_v = self.v(pos_v)  # emb_pos_v: Float[bs, 1, d]
-        emb_neg_v = self.v(neg_v)  # emb_neg_v: Float[bs, 5, d]
+        emb_pos_u = self.u(pos_u)  # emb_pos_u: Int[bs, 1, d]
+        emb_pos_v = self.v(pos_v)  # emb_pos_v: Int[bs, 1, d]
+        emb_neg_v = self.v(neg_v)  # emb_neg_v: Int[bs, 5, d]
         pos_s = torch.bmm(emb_pos_v, emb_pos_u.view(bs, self.emb_dim, 1)).view(bs, -1)  # pos_s: Float[bs, 1]
         neg_s = torch.bmm(emb_neg_v, emb_pos_u.view(bs, self.emb_dim, 1)).view(bs, -1)  # neg_s: Float[bs, 5]
         return pos_s, neg_s

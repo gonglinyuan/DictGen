@@ -54,29 +54,29 @@ class CorpusData(Dataset):
         self.n_tokens = sum([len(doc) for doc in self.corpus])
         self.p_discard = get_discard_table(self.dic, self.n_tokens, threshold)
         for i in range(len(self.corpus)):
-            self.corpus[i] = [w if w != -1 else self.vocab_size
-                              for w in self.corpus[i]]
+            self.corpus[i] = torch.IntTensor([w if w != -1 else self.vocab_size
+                                              for w in self.corpus[i]])
 
     def __getitem__(self, index):
-        doc = self.corpus[index]
-        doc = [w for w in doc if w == self.vocab_size or np.random.rand() >= self.p_discard[w]]
+        doc = torch.IntTensor([w for w in self.corpus[index]
+                               if w == self.vocab_size or np.random.rand() >= self.p_discard[w]])
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
-        for i in range(len(doc)):
+        for i in doc.shape[0]:
             pos_u = doc[i]
             ws = np.random.randint(1, self.max_ws + 1)
             for j in range(-ws, ws + 1):
-                if j != 0 and 0 <= i + j < len(doc):
+                if j != 0 and 0 <= i + j < doc.shape[0]:
                     pos_v = doc[i + j]
-                    neg_v = []
-                    for _ in range(self.n_ns):
-                        neg_v.append(self.negative_sampler.sample(pos_v))
+                    neg_v = torch.IntTensor(self.n_ns)
+                    for k in range(self.n_ns):
+                        neg_v[k] = self.negative_sampler.sample(pos_v)
                     pos_u_b.append(pos_u)
                     pos_v_b.append(pos_v)
                     neg_v_b.append(neg_v)
                     c += 1
-        pos_u_b = torch.LongTensor(pos_u_b).view(c, 1)
-        pos_v_b = torch.LongTensor(pos_v_b).view(c, 1)
-        neg_v_b = torch.LongTensor(neg_v_b).view(c, self.n_ns)
+        pos_u_b = torch.IntTensor(pos_u_b).view(c, 1)
+        pos_v_b = torch.IntTensor(pos_v_b).view(c, 1)
+        neg_v_b = torch.stack(neg_v_b).view(c, self.n_ns)
         if self.shuffle:
             perm = torch.randperm(c)
             return pos_u_b[perm], pos_v_b[perm], neg_v_b[perm]
