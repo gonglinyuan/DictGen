@@ -62,11 +62,11 @@ class CorpusData(Dataset):
                                if w == self.vocab_size or np.random.rand() >= self.p_discard[w]])
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
         for i in range(doc.shape[0]):
-            pos_u = doc[i]
+            pos_u = doc[i].item()
             ws = np.random.randint(1, self.max_ws + 1)
             for j in range(-ws, ws + 1):
                 if j != 0 and 0 <= i + j < doc.shape[0]:
-                    pos_v = doc[i + j]
+                    pos_v = doc[i + j].item()
                     neg_v = torch.IntTensor(self.n_ns)
                     for k in range(self.n_ns):
                         neg_v[k] = self.negative_sampler.sample(pos_v)
