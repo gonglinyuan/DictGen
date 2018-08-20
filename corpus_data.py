@@ -69,7 +69,7 @@ class CorpusData(Dataset):
                     pos_v = doc[i + j].item()
                     neg_v = torch.IntTensor(self.n_ns)
                     for k in range(self.n_ns):
-                        neg_v[k] = self.negative_sampler.sample(pos_v)
+                        neg_v[k] = int(self.negative_sampler.sample(pos_v))
                     pos_u_b.append(pos_u)
                     pos_v_b.append(pos_v)
                     neg_v_b.append(neg_v)
