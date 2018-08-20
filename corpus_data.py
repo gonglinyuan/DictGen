@@ -61,7 +61,7 @@ class CorpusData(Dataset):
         doc = torch.IntTensor([w for w in self.corpus[index]
                                if w == self.vocab_size or np.random.rand() >= self.p_discard[w]])
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
-        for i in doc.shape[0]:
+        for i in range(doc.shape[0]):
             pos_u = doc[i]
             ws = np.random.randint(1, self.max_ws + 1)
             for j in range(-ws, ws + 1):
