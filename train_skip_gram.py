@@ -33,26 +33,31 @@ if __name__ == "__main__":
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
     parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
+
+    parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
+    parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
     params = parser.parse_args()
 
     print(params)
 
-    if not os.path.exists(params.out_path):
-        os.mkdir(params.out_path)
+    out_path = os.path.join(params.modelDir, params.out_path)
+    if not os.path.exists(out_path):
+        os.mkdir(out_path)
 
-    corpus_data = CorpusData(params.corpus_path, params.dic_path, max_ws=params.max_ws, n_ns=params.n_ns,
-                             threshold=params.threshold)
+    corpus_data = CorpusData(os.path.join(params.dataDir, params.corpus_path),
+                             os.path.join(params.dataDir, params.dic_path),
+                             max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
                              num_workers=params.n_threads, pin_memory=True, shuffle=True)
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
     optimizer, scheduler = optimizers.get(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
 
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
-                        log_to_filename=os.path.join(params.out_path, "log.txt"))
+                        log_to_filename=os.path.join(out_path, "log.txt"))
     out_freq = (len(data_loader) + 99) // 100
     loss0, loss1, step = 0, 0.0, 0
     for epoch in trange(params.n_epochs, desc="epoch"):
-        print(f"epoch {epoch} ; out_path = {params.out_path}")
+        print(f"epoch {epoch} ; out_path = {out_path}")
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
             scheduler.step()
             for i in range(pos_u.shape[0] // params.bs):
@@ -74,7 +79,7 @@ if __name__ == "__main__":
                 loss0, loss1 = 0, 0.0
                 step += 1
         if params.checkpoint:
-            torch.save(model.state_dict(), os.path.join(params.out_path, f"model-epoch{epoch}.pt"))
+            torch.save(model.state_dict(), os.path.join(out_path, f"model-epoch{epoch}.pt"))
 
-    torch.save(model.state_dict(), os.path.join(params.out_path, f"model.pt"))
+    torch.save(model.state_dict(), os.path.join(out_path, f"model.pt"))
     print(params)
