@@ -55,7 +55,7 @@ if __name__ == "__main__":
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"))
     out_freq = (len(data_loader) + 99) // 100
-    loss0, loss1, step = 0, 0.0, 0
+    loss0, loss1, step, mini_step = 0, 0.0, 0, 0
     for epoch in trange(params.n_epochs, desc="epoch"):
         print(f"epoch {epoch} ; out_path = {out_path}")
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
@@ -71,12 +71,13 @@ if __name__ == "__main__":
                 loss1 += loss.item()
                 loss.backward()
                 optimizer.step()
-            if loss0 >= out_freq:
+            mini_step += 1
+            if mini_step >= out_freq:
                 vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]),
                          win="lr", env=params.out_path, update="append")
                 vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]),
                          win="loss", env=params.out_path, update="append")
-                loss0, loss1 = 0, 0.0
+                loss0, loss1, mini_step = 0, 0.0, 0
                 step += 1
         if params.checkpoint:
             torch.save(model.state_dict(), os.path.join(out_path, f"model-epoch{epoch}.pt"))
