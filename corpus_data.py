@@ -53,9 +53,6 @@ class CorpusData(Dataset):
         self.shuffle = shuffle
         self.n_tokens = sum([len(doc) for doc in self.corpus])
         self.p_discard = get_discard_table(self.dic, self.n_tokens, threshold)
-        for i in range(len(self.corpus)):
-            self.corpus[i] = torch.IntTensor([w if w != -1 else self.vocab_size
-                                              for w in self.corpus[i]])
 
     def __getitem__(self, index):
         doc = torch.IntTensor([w for w in self.corpus[index]

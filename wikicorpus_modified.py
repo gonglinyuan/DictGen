@@ -39,8 +39,8 @@ ARTICLE_MIN_WORDS = 5
 """Ignore shorter articles (after full preprocessing)."""
 
 # default thresholds for lengths of individual tokens
-TOKEN_MIN_LEN = 2
-TOKEN_MAX_LEN = 15
+TOKEN_MIN_LEN = 1
+TOKEN_MAX_LEN = 20
 
 RE_P0 = re.compile(r'<!--.*?-->', re.DOTALL | re.UNICODE)
 """Comments."""

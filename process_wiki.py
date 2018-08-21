@@ -6,6 +6,8 @@ from tqdm import trange, tqdm
 
 from wikicorpus_modified import WikiCorpus
 
+VOCAB_SIZE = 200000
+
 if __name__ == "__main__":
     lang = sys.argv[1]
     wiki = WikiCorpus(f"{lang}wiki-20180801-pages-articles.xml.bz2")
@@ -17,12 +19,12 @@ if __name__ == "__main__":
     sorted_ids = np.argsort(freqTable)[::-1]
     lst = []
     wd2id = {}
-    for i in trange(200000):
+    for i in trange(VOCAB_SIZE):
         id = sorted_ids[i]
         wd2id[wiki.dictionary[id]] = i
         lst.append([wiki.dictionary[id], freqTable[id]])
     cor = []
     for doc in tqdm(wiki.get_texts(), total=len(wiki)):
-        cor.append([wd2id.get(w, -1) for w in doc])
-    torch.save(lst, f"{lang}_dictionary.pt")
+        cor.append(torch.IntTensor([wd2id.get(w, VOCAB_SIZE) for w in doc]))
+    torch.save(lst, f"{lang}_dict.pt")
     torch.save(cor, f"{lang}_wiki.pt")
