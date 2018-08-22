@@ -47,6 +47,7 @@ if __name__ == "__main__":
     corpus_data = CorpusData(os.path.join(params.dataDir, params.corpus_path),
                              os.path.join(params.dataDir, params.dic_path),
                              max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
+    exit(-1)
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
                              num_workers=params.n_threads, pin_memory=True, sampler=BlockRandomSampler(corpus_data))
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
@@ -56,7 +57,6 @@ if __name__ == "__main__":
                         log_to_filename=os.path.join(out_path, "log.txt"))
     out_freq = (len(data_loader) + 99) // 100
     loss0, loss1, step, mini_step = 0, 0.0, 0, 0
-    exit(-1)
     for epoch in trange(params.n_epochs, desc="epoch"):
         print(f"epoch {epoch} ; out_path = {out_path}")
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
