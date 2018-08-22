@@ -56,6 +56,7 @@ if __name__ == "__main__":
                         log_to_filename=os.path.join(out_path, "log.txt"))
     out_freq = (len(data_loader) + 99) // 100
     loss0, loss1, step, mini_step = 0, 0.0, 0, 0
+    exit(-1)
     for epoch in trange(params.n_epochs, desc="epoch"):
         print(f"epoch {epoch} ; out_path = {out_path}")
         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
