@@ -1,9 +1,13 @@
+import gc
+
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from torch.utils.data.dataloader import _use_shared_memory
 
-__all__ = ["CorpusData", "concat_collate"]
+__all__ = ["CorpusData", "concat_collate", "BlockRandomSampler"]
+
+BLOCK_SIZE = 1000000
 
 
 class NegativeSampling:
@@ -44,18 +48,28 @@ def get_discard_table(dic, n_tokens, threshold):
 
 class CorpusData(Dataset):
     def __init__(self, corpus_path, dic_path, *, max_ws, n_ns, threshold, n_negatives=10000000, shuffle=False):
-        self.corpus = torch.load(corpus_path)
-        self.dic = torch.load(dic_path)
+        self.corpus_path = corpus_path
+        meta = torch.load(f"{corpus_path}.meta.pt")
+        self.n_docs = meta["n_docs"]
+        self.n_tokens = meta["n_tokens"]
+        self.dic = torch.load(f"{dic_path}.pt")
         self.vocab_size = len(self.dic)
         self.negative_sampler = NegativeSampling(self.dic, n_negatives=n_negatives)
         self.max_ws = max_ws
         self.n_ns = n_ns
         self.shuffle = shuffle
-        self.n_tokens = sum([len(doc) for doc in self.corpus])
         self.p_discard = get_discard_table(self.dic, self.n_tokens, threshold)
 
+        self.corpus_block = None
+        self.corpus_idx = -1
+
     def __getitem__(self, index):
-        doc = torch.IntTensor([w for w in self.corpus[index]
+        idx = (index // BLOCK_SIZE, index % BLOCK_SIZE)
+        if idx[0] != self.corpus_idx:
+            self.corpus_idx = idx[0]
+            self.corpus_block = torch.load(f"{self.corpus_path}.{self.corpus_idx}.pt")
+            gc.collect()
+        doc = torch.IntTensor([w for w in self.corpus_block[idx[1]]
                                if w == self.vocab_size or np.random.rand() >= self.p_discard[w]])
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
         for i in range(doc.shape[0]):
@@ -84,7 +98,7 @@ class CorpusData(Dataset):
             return pos_u_b, pos_v_b, neg_v_b
 
     def __len__(self):
-        return len(self.corpus)
+        return self.n_docs
 
 
 def concat_collate(batch):
@@ -99,3 +113,23 @@ def concat_collate(batch):
         return [tmp[perm].share_memory_() for tmp in result]
     else:
         return [tmp[perm] for tmp in result]
+
+
+class BlockRandomSampler(Sampler):
+    def __init__(self, data_source):
+        super().__init__(data_source)
+        self.data_source = data_source
+
+    def __iter__(self):
+        n_blocks = (len(self.data_source) + BLOCK_SIZE - 1) // BLOCK_SIZE
+        lst = []
+        for blk_id in torch.randperm(n_blocks):
+            if blk_id == n_blocks - 1:
+                blk_sz = len(self.data_source) - (n_blocks - 1) * BLOCK_SIZE
+            else:
+                blk_sz = BLOCK_SIZE
+            lst += (torch.randperm(blk_sz) + blk_id * BLOCK_SIZE).tolist()
+        return iter(lst)
+
+    def __len__(self):
+        return len(self.data_source)

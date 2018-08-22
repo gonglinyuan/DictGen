@@ -8,6 +8,7 @@ from tqdm import trange, tqdm
 from wikicorpus_modified import WikiCorpus
 
 VOCAB_SIZE = 200000
+BLOCK_SIZE = 1000000
 
 if __name__ == "__main__":
     lang = sys.argv[1]
@@ -24,8 +25,16 @@ if __name__ == "__main__":
         id = sorted_ids[i]
         wd2id[wiki.dictionary[id]] = i
         lst.append([wiki.dictionary[id], freqTable[id]])
-    cor = []
-    for doc in tqdm(wiki.get_texts(), total=len(wiki)):
+    cor, tot, blk_cnt, n_tokens = [], len(wiki), 0, 0
+    for i, doc in tqdm(enumerate(wiki.get_texts()), total=tot):
         cor.append(array("i", [wd2id.get(w, VOCAB_SIZE) for w in doc]))
-    torch.save(lst, f"{lang}_dict.pt")
-    torch.save(cor, f"{lang}_cor.pt")
+        n_tokens += len(doc)
+        if (i + 1) % BLOCK_SIZE == 0 or i + 1 == tot:
+            torch.save(cor, f"{lang}_cor.{blk_cnt}.pt")
+            cor = []
+            blk_cnt += 1
+    torch.save(lst, f"{lang}_dic.pt")
+    torch.save({
+        "n_docs": tot,
+        "n_tokens": n_tokens
+    }, f"{lang}_cor.meta.pt")
