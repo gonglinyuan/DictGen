@@ -1,4 +1,5 @@
 import sys
+from array import array
 
 import numpy as np
 import torch
@@ -25,6 +26,6 @@ if __name__ == "__main__":
         lst.append([wiki.dictionary[id], freqTable[id]])
     cor = []
     for doc in tqdm(wiki.get_texts(), total=len(wiki)):
-        cor.append(torch.IntTensor([wd2id.get(w, VOCAB_SIZE) for w in doc]))
+        cor.append(array("i", [wd2id.get(w, VOCAB_SIZE) for w in doc]))
     torch.save(lst, f"{lang}_dict.pt")
-    torch.save(cor, f"{lang}_wiki.pt")
+    torch.save(cor, f"{lang}_cor.pt")
