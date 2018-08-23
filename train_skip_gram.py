@@ -70,6 +70,19 @@ if __name__ == "__main__":
                 loss1 += loss.item()
                 loss.backward()
                 optimizer.step()
+            left_portion = (pos_u.shape[0] % params.bs) / params.bs
+            if left_portion > 0.01:
+                # If the samples left are not negligible
+                optimizer.zero_grad()
+                pos_u_b = pos_u[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
+                pos_v_b = pos_v[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
+                neg_v_b = neg_v[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
+                pos_s, neg_s = model(pos_u_b, pos_v_b, neg_v_b)
+                loss = SkipGram.loss_fn(pos_s, neg_s) * left_portion
+                loss0 += left_portion
+                loss1 += loss.item()
+                loss.backward()
+                optimizer.step()
             mini_step += 1
             if mini_step >= out_freq:
                 vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]),
