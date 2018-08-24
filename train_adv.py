@@ -1,9 +1,15 @@
+import argparse
+import os
+from datetime import datetime
+
 import torch
 import torch.nn as nn
+import visdom
 from torch.utils.data import DataLoader
+from tqdm import trange
 
 import optimizers
-from corpus_data import concat_collate, BlockRandomSampler
+from corpus_data import concat_collate, BlockRandomSampler, CorpusData
 from discriminator import Discriminator
 from skip_gram import SkipGram
 from word_sampler import WordSampler
@@ -45,16 +51,17 @@ class Trainer:
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         self.d_optimizer, self.d_scheduler = optimizers.get_adv(self.discriminator.parameters(), params.n_steps,
-                                                                lr=params.a_lr, apex=params.apex)
+                                                                lr=params.d_lr, apex=params.apex)
         self.smooth = params.smooth
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
         self.corpus_data_queue = [
             _data_queue(corpus_data_0, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
-                        batch_size=params.bs),
+                        batch_size=params.sg_bs),
             _data_queue(corpus_data_1, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
-                        batch_size=params.bs)
+                        batch_size=params.sg_bs)
         ]
-        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=params.n_negatives, alpha=0.5), WordSampler(corpus_data_1.dic, n_urns=params.n_negatives, alpha=0.5)]
+        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=params.n_negatives, alpha=0.5),
+                        WordSampler(corpus_data_1.dic, n_urns=params.n_negatives, alpha=0.5)]
         self.d_bs = params.d_bs
 
     def skip_gram_step(self):
@@ -107,85 +114,99 @@ class Trainer:
         self.d_optimizer.step()
         return loss.item()
 
-# if __name__ == "__main__":
-#     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-#
-#     parser = argparse.ArgumentParser(description="train skip-gram only")
-#     parser.add_argument("corpus_path", type=str, help="path of corpus")
-#     parser.add_argument("dic_path", type=str, help="path of dictionary")
-#     parser.add_argument("--out_path", type=str, default=timestamp, help="path of all outputs")
-#     parser.add_argument("--max_ws", type=int, help="max window size")
-#     parser.add_argument("--n_ns", type=int, help="number of negative samples")
-#     parser.add_argument("--n_threads", type=int, help="number of data loader threads")
-#     parser.add_argument("--bs", type=int, help="batch size")
-#     parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
-#     parser.add_argument("--lr", type=float, help="initial learning rate")
-#     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
-#     parser.add_argument("--n_epochs", type=int, help="number of epochs")
-#     parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
-#     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
-#     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
-#     parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
-#
-#     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
-#     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
-#     params = parser.parse_args()
-#
-#     print(params)
-#
-#     out_path = os.path.join(params.modelDir, params.out_path)
-#     if not os.path.exists(out_path):
-#         os.mkdir(out_path)
-#
-#     corpus_data = CorpusData(os.path.join(params.dataDir, params.corpus_path),
-#                              os.path.join(params.dataDir, params.dic_path),
-#                              max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
-#     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
-#                              num_workers=params.n_threads, pin_memory=True, sampler=BlockRandomSampler(corpus_data))
-#     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
-#     optimizer, scheduler = optimizers.get(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
-#     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
-#                         log_to_filename=os.path.join(out_path, "log.txt"))
-#     out_freq = (len(data_loader) + 99) // 100
-#     loss0, loss1, step, mini_step = 0, 0.0, 0, 0
-#     for epoch in trange(params.n_epochs, desc="epoch"):
-#         print(f"epoch {epoch} ; out_path = {out_path}")
-#         for pos_u, pos_v, neg_v in tqdm(data_loader, desc=f"epoch {epoch}"):
-#             scheduler.step()
-#             for i in range(pos_u.shape[0] // params.bs):
-#                 optimizer.zero_grad()
-#                 pos_u_b = pos_u[i * params.bs: (i + 1) * params.bs].to(GPU)
-#                 pos_v_b = pos_v[i * params.bs: (i + 1) * params.bs].to(GPU)
-#                 neg_v_b = neg_v[i * params.bs: (i + 1) * params.bs].to(GPU)
-#                 pos_s, neg_s = model(pos_u_b, pos_v_b, neg_v_b)
-#                 loss = SkipGram.loss_fn(pos_s, neg_s)
-#                 loss0 += 1
-#                 loss1 += loss.item()
-#                 loss.backward()
-#                 optimizer.step()
-#             left_portion = (pos_u.shape[0] % params.bs) / params.bs
-#             if left_portion > 0.01:
-#                 # If the samples left are not negligible
-#                 optimizer.zero_grad()
-#                 pos_u_b = pos_u[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
-#                 pos_v_b = pos_v[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
-#                 neg_v_b = neg_v[(pos_u.shape[0] // params.bs) * params.bs:].to(GPU)
-#                 pos_s, neg_s = model(pos_u_b, pos_v_b, neg_v_b)
-#                 loss = SkipGram.loss_fn(pos_s, neg_s) * left_portion
-#                 loss0 += left_portion
-#                 loss1 += loss.item()
-#                 loss.backward()
-#                 optimizer.step()
-#             mini_step += 1
-#             if mini_step >= out_freq:
-#                 vis.line(Y=torch.FloatTensor([scheduler.factor * params.lr]), X=torch.LongTensor([step]),
-#                          win="lr", env=params.out_path, update="append")
-#                 vis.line(Y=torch.FloatTensor([loss1 / loss0]), X=torch.LongTensor([step]),
-#                          win="loss", env=params.out_path, update="append")
-#                 loss0, loss1, mini_step = 0, 0.0, 0
-#                 step += 1
-#         if params.checkpoint:
-#             torch.save(model.state_dict(), os.path.join(out_path, f"model-epoch{epoch}.pt"))
-#
-#     torch.save(model.state_dict(), os.path.join(out_path, f"model.pt"))
-#     print(params)
+    def scheduler_step(self):
+        for id in [0, 1]:
+            self.sg_scheduler[id].step()
+            self.a_scheduler[id].step()
+            self.d_scheduler.step()
+
+
+def main():
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    parser = argparse.ArgumentParser(description="adversarial training")
+    parser.add_argument("corpus_path_0", type=str, help="path of corpus 0")
+    parser.add_argument("corpus_path_1", type=str, help="path of corpus 1")
+    parser.add_argument("dic_path_0", type=str, help="path of dictionary 0")
+    parser.add_argument("dic_path_1", type=str, help="path of dictionary 1")
+    parser.add_argument("--out_path", type=str, default=timestamp, help="path of all outputs")
+    parser.add_argument("--max_ws", type=int, help="max window size")
+    parser.add_argument("--n_ns", type=int, help="number of negative samples")
+    parser.add_argument("--n_threads", type=int, help="number of data loader threads")
+    parser.add_argument("--sg_bs", type=int, help="batch size")
+    parser.add_argument("--d_bs", type=int, help="batch size for the discriminator")
+    parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
+    parser.add_argument("--sg_lr", type=float, help="initial learning rate of skip-gram")
+    parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
+    parser.add_argument("--d_lr", type=float, help="max learning rate of adversarial training for the discriminator")
+    parser.add_argument("--apex", type=int, help="position of the learning rate apex")
+    parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
+    parser.add_argument("--n_steps", type=int, help="number of iterations")
+    parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
+    parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
+    parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
+    parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
+    parser.add_argument("--checkpoint", type=bool, default=False, help="save a checkpoint after each epoch")
+
+    parser.add_argument("--d_n_layers", type=int, help="number of hidden layers of the discriminator")
+    parser.add_argument("--d_n_units", type=int, help="number of units per hidden layer of the discriminator")
+    parser.add_argument("--d_drop_prob", type=float, help="dropout probability after each layer of the discriminator")
+    parser.add_argument("--d_drop_prob_input", type=float, help="dropout probability of the input of the discriminator")
+    parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
+
+    parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
+    parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
+
+    params = parser.parse_args()
+
+    print(params)
+
+    out_path = os.path.join(params.modelDir, params.out_path)
+    if not os.path.exists(out_path):
+        os.mkdir(out_path)
+
+    corpus_data_0 = CorpusData(os.path.join(params.dataDir, params.corpus_path_0),
+                               os.path.join(params.dataDir, params.dic_path_0),
+                               max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
+    corpus_data_1 = CorpusData(os.path.join(params.dataDir, params.corpus_path_1),
+                               os.path.join(params.dataDir, params.dic_path_1),
+                               max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
+    trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
+    vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
+                        log_to_filename=os.path.join(out_path, "log.txt"))
+    out_freq, checkpoint_freq = 1000, params.n_steps // 10
+    step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
+    for i in trange(params.n_steps):
+        trainer.scheduler_step()
+        l0, l1 = trainer.skip_gram_step()
+        sg_loss[0] += l0
+        sg_loss[1] += l1
+        d_loss += trainer.discriminator_step()
+        a_loss += trainer.adversarial_step()
+        c += 1
+        if c >= out_freq:
+            vis.line(Y=torch.FloatTensor([trainer.sg_scheduler[0].factor * params.sg_lr]), X=torch.LongTensor([step]),
+                     win="sg_lr", env=params.out_path, opts={"title": "sg_lr"}, update="append")
+            vis.line(Y=torch.FloatTensor([trainer.a_scheduler[0].factor * params.a_lr]), X=torch.LongTensor([step]),
+                     win="a_lr", env=params.out_path, opts={"title": "a_lr"}, update="append")
+            vis.line(Y=torch.FloatTensor([trainer.d_scheduler.factor * params.d_lr]), X=torch.LongTensor([step]),
+                     win="d_lr", env=params.out_path, opts={"title": "d_lr"}, update="append")
+            vis.line(Y=torch.FloatTensor([sg_loss[0] / c]), X=torch.LongTensor([step]),
+                     win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
+            vis.line(Y=torch.FloatTensor([sg_loss[1] / c]), X=torch.LongTensor([step]),
+                     win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
+            vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
+                     win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
+            vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
+                     win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
+            c = 0
+            step += 1
+        if params.checkpoint and (i + 1) % checkpoint_freq == 0:
+            torch.save({"skip_gram_0": trainer.skip_gram[0].state_dict(),
+                        "skip_gram_1": trainer.skip_gram[1].state_dict(),
+                        "discriminator": trainer.discriminator.state_dict()},
+                       os.path.join(out_path, f"model-epoch{(i + 1) // checkpoint_freq}.pt"))
+    torch.save({"skip_gram_0": trainer.skip_gram[0].state_dict(),
+                "skip_gram_1": trainer.skip_gram[1].state_dict(),
+                "discriminator": trainer.discriminator.state_dict()},
+               os.path.join(out_path, f"model.pt"))
+    print(params)
