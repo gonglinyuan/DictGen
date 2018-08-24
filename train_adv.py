@@ -31,7 +31,7 @@ def _data_queue(corpus_data, *, n_threads, n_sentences, batch_size):
 
 
 class Trainer:
-    def __init__(self, corpus_data_0, corpus_data_1, *, params):
+    def __init__(self, corpus_data_0, corpus_data_1, *, params, n_samples=10000000):
         self.skip_gram = [SkipGram(corpus_data_0.vocab_size + 1, params.emb_dim).to(GPU),
                           SkipGram(corpus_data_1.vocab_size + 1, params.emb_dim).to(GPU)]
         self.discriminator = Discriminator(params.emb_dim, n_layers=params.d_n_layers, n_units=params.d_n_units,
@@ -60,8 +60,8 @@ class Trainer:
             _data_queue(corpus_data_1, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
                         batch_size=params.sg_bs)
         ]
-        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=params.n_negatives, alpha=0.5),
-                        WordSampler(corpus_data_1.dic, n_urns=params.n_negatives, alpha=0.5)]
+        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=0.5),
+                        WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=0.5)]
         self.d_bs = params.d_bs
 
     def skip_gram_step(self):
