@@ -36,7 +36,7 @@ class Trainer:
                           SkipGram(corpus_data_1.vocab_size + 1, params.emb_dim).to(GPU)]
         self.discriminator = Discriminator(params.emb_dim, n_layers=params.d_n_layers, n_units=params.d_n_units,
                                            drop_prob=params.d_drop_prob, drop_prob_input=params.d_drop_prob_input,
-                                           leaky=params.d_leaky)
+                                           leaky=params.d_leaky).to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_skip_gram(self.skip_gram[id].parameters(), params.n_steps,
