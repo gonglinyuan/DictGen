@@ -5,34 +5,11 @@ import torch
 from torch.utils.data import Dataset, Sampler
 from torch.utils.data.dataloader import _use_shared_memory
 
+from word_sampler import WordSampler
+
 __all__ = ["CorpusData", "concat_collate", "BlockRandomSampler"]
 
 BLOCK_SIZE = 1000000
-
-
-class NegativeSampling:
-    def __init__(self, dic, *, n_negatives):
-        self.n_negatives = n_negatives
-        self.negatives = np.zeros(self.n_negatives, dtype=np.int32)
-        j = 0
-        z = 0.0
-        for i in range(len(dic)):
-            z += dic[i][1] ** 0.5
-        for i in range(len(dic)):
-            c = dic[i][1] ** 0.5
-            for _ in range(int(c * self.n_negatives / z)):
-                self.negatives[j] = i
-                j += 1
-        np.random.shuffle(self.negatives)
-        self.neg_pos = 0
-
-    def sample(self, pos):
-        neg = self.negatives[self.neg_pos]
-        self.neg_pos = (self.neg_pos + 1) % self.n_negatives
-        while neg == pos:
-            neg = self.negatives[self.neg_pos]
-            self.neg_pos = (self.neg_pos + 1) % self.n_negatives
-        return neg
 
 
 def get_discard_table(dic, n_tokens, threshold):
@@ -54,7 +31,7 @@ class CorpusData(Dataset):
         self.n_tokens = meta["n_tokens"]
         self.dic = torch.load(f"{dic_path}.pt")
         self.vocab_size = len(self.dic)
-        self.negative_sampler = NegativeSampling(self.dic, n_negatives=n_negatives)
+        self.negative_sampler = WordSampler(self.dic, n_urns=n_negatives, alpha=0.5)
         self.max_ws = max_ws
         self.n_ns = n_ns
         self.shuffle = shuffle
@@ -80,7 +57,7 @@ class CorpusData(Dataset):
                     pos_v = doc[i + j].item()
                     neg_v = torch.LongTensor(self.n_ns)
                     for k in range(self.n_ns):
-                        neg_v[k] = int(self.negative_sampler.sample(pos_v))
+                        neg_v[k] = int(self.negative_sampler.sample_neg(pos_v))
                     pos_u_b.append(pos_u)
                     pos_v_b.append(pos_v)
                     neg_v_b.append(neg_v)

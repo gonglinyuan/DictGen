@@ -1,6 +1,6 @@
 import torch.optim as optim
 
-__all__ = ["get"]
+__all__ = ["get_skip_gram", "get_adv"]
 
 
 class LinearDecayLR(optim.lr_scheduler._LRScheduler):
@@ -14,7 +14,25 @@ class LinearDecayLR(optim.lr_scheduler._LRScheduler):
         return [self.factor * base_lr for base_lr in self.base_lrs]
 
 
-def get(parameters, n_batch, *, lr):
+class LinearLRWithApex(optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, n_batch, apex, last_epoch=-1):
+        self.n_batch = n_batch
+        self.apex = apex
+        self.factor = None
+        super(LinearLRWithApex, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        self.factor = min(self.last_epoch / self.apex, (self.n_batch - self.last_epoch) / (self.n_batch - self.apex))
+        return [self.factor * base_lr for base_lr in self.base_lrs]
+
+
+def get_skip_gram(parameters, n_batch, *, lr):
     optimizer = optim.SGD(parameters, lr=lr)
     scheduler = LinearDecayLR(optimizer, n_batch)
+    return optimizer, scheduler
+
+
+def get_adv(parameters, n_batch, *, lr, apex):
+    optimizer = optim.SGD(parameters, lr=lr)
+    scheduler = LinearLRWithApex(optimizer, n_batch, apex)
     return optimizer, scheduler
