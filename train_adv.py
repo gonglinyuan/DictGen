@@ -89,7 +89,7 @@ class Trainer:
         else:
             y[: self.d_bs] = self.smooth
             y[self.d_bs:] = 1 - self.smooth
-        return x, y
+        return x.to(GPU), y.to(GPU)
 
     def adversarial_step(self):
         for id in [0, 1]:
