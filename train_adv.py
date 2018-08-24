@@ -210,3 +210,7 @@ def main():
                 "discriminator": trainer.discriminator.state_dict()},
                os.path.join(out_path, f"model.pt"))
     print(params)
+
+
+if __name__ == "__main__":
+    main()
