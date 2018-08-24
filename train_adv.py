@@ -173,7 +173,7 @@ def main():
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"))
-    out_freq, checkpoint_freq = 1000, params.n_steps // 10
+    out_freq, checkpoint_freq = 500, params.n_steps // 10
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for i in trange(params.n_steps):
         trainer.scheduler_step()
@@ -198,7 +198,7 @@ def main():
                      win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
             vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
                      win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
-            c = 0
+            c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
             step += 1
         if params.checkpoint and (i + 1) % checkpoint_freq == 0:
             torch.save({"skip_gram_0": trainer.skip_gram[0].state_dict(),
