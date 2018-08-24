@@ -73,7 +73,7 @@ class Trainer:
             loss = SkipGram.loss_fn(pos_s, neg_s)
             loss.backward()
             self.sg_optimizer[id].step()
-            losses[id] = loss.item()
+            losses.append(loss.item())
         return losses[0], losses[1]
 
     def get_adv_batch(self, *, reverse):
