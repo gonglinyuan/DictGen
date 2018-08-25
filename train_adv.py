@@ -172,7 +172,7 @@ def main():
                                max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
-                        log_to_filename=os.path.join(out_path, "log.txt"))
+                        log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq, checkpoint_freq = 500, params.n_steps // 10
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for i in trange(params.n_steps):
