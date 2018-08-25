@@ -60,8 +60,8 @@ class Trainer:
             _data_queue(corpus_data_1, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
                         batch_size=params.sg_bs)
         ]
-        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=0.5),
-                        WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=0.5)]
+        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=0.75),
+                        WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=0.75)]
         self.d_bs = params.d_bs
 
     def skip_gram_step(self):
@@ -118,7 +118,7 @@ class Trainer:
         for id in [0, 1]:
             self.sg_scheduler[id].step()
             self.a_scheduler[id].step()
-            self.d_scheduler.step()
+        self.d_scheduler.step()
 
 
 def main():
