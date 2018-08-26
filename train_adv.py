@@ -36,22 +36,28 @@ class Trainer:
                           SkipGram(corpus_data_1.vocab_size + 1, params.emb_dim).to(GPU)]
         self.discriminator = Discriminator(params.emb_dim, n_layers=params.d_n_layers, n_units=params.d_n_units,
                                            drop_prob=params.d_drop_prob, drop_prob_input=params.d_drop_prob_input,
-                                           leaky=params.d_leaky).to(GPU)
+                                           leaky=params.d_leaky, batch_norm=params.d_bn).to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_skip_gram(self.skip_gram[id].parameters(), params.n_steps,
-                                                            lr=params.sg_lr)
+            optimizer, scheduler = optimizers.get_sgd(self.skip_gram[id].parameters(), params.n_steps,
+                                                      lr=params.sg_lr)
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_adv(
+            optimizer, scheduler = optimizers.get_sgd(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
-                params.n_steps, lr=params.a_lr, apex=params.apex)
+                params.n_steps, lr=params.a_lr)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
-        self.d_optimizer, self.d_scheduler = optimizers.get_adv(self.discriminator.parameters(), params.n_steps,
-                                                                lr=params.d_lr, apex=params.apex)
+        if params.d_optimizer == "SGD":
+            self.d_optimizer, self.d_scheduler = optimizers.get_sgd(self.discriminator.parameters(), params.n_steps,
+                                                                    lr=params.d_lr, wd=params.d_wd)
+        elif params.d_optimizer == "RMSProp":
+            self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop(self.discriminator.parameters(), params.n_steps,
+                                                                        lr=params.d_lr, wd=params.d_wd)
+        else:
+            raise Exception(f"Optimizer {params.d_optimizer} not found.")
         self.smooth = params.smooth
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
         self.corpus_data_queue = [
@@ -82,13 +88,11 @@ class Trainer:
         x = [((self.skip_gram[id].u(batch[id]) + self.skip_gram[id].v(batch[id])) * 0.5).view(self.d_bs, -1)
              for id in [0, 1]]
         x = torch.cat(x, 0)
-        y = torch.FloatTensor(self.d_bs * 2).to(GPU)
+        y = torch.FloatTensor(self.d_bs * 2).to(GPU).uniform_(0.0, self.smooth)
         if reverse:
-            y[: self.d_bs] = 1 - self.smooth
-            y[self.d_bs:] = self.smooth
+            y[: self.d_bs] = 1 - y[: self.d_bs]
         else:
-            y[: self.d_bs] = self.smooth
-            y[self.d_bs:] = 1 - self.smooth
+            y[self.d_bs:] = 1 - y[self.d_bs:]
         return x, y
 
     def adversarial_step(self):
@@ -138,7 +142,6 @@ def main():
     parser.add_argument("--sg_lr", type=float, help="initial learning rate of skip-gram")
     parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
     parser.add_argument("--d_lr", type=float, help="max learning rate of adversarial training for the discriminator")
-    parser.add_argument("--apex", type=int, help="position of the learning rate apex")
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_steps", type=int, help="number of iterations")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
@@ -152,6 +155,9 @@ def main():
     parser.add_argument("--d_drop_prob", type=float, help="dropout probability after each layer of the discriminator")
     parser.add_argument("--d_drop_prob_input", type=float, help="dropout probability of the input of the discriminator")
     parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
+    parser.add_argument("--d_wd", type=float, help="weight decay of adversarial training for the discriminator")
+    parser.add_argument("--d_bn", type=bool, help="turn on batch normalization for the discriminator or not")
+    parser.add_argument("--d_optimizer", type=float, help="optimizer for the discriminator")
 
     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
