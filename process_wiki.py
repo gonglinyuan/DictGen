@@ -7,7 +7,7 @@ from tqdm import trange, tqdm
 
 from wikicorpus_modified import WikiCorpus
 
-VOCAB_SIZE = 200000
+VOCAB_SIZE = 400000
 BLOCK_SIZE = 1000000
 
 if __name__ == "__main__":
