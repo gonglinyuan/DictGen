@@ -107,7 +107,7 @@ class Trainer:
         self.d_optimizer.zero_grad()
         self.discriminator.train()
         with torch.no_grad():
-            x, y = self.get_adv_batch(reverse=True)
+            x, y = self.get_adv_batch(reverse=False)
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
         loss.backward()
