@@ -157,7 +157,7 @@ def main():
     parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
     parser.add_argument("--d_wd", type=float, help="weight decay of adversarial training for the discriminator")
     parser.add_argument("--d_bn", type=bool, help="turn on batch normalization for the discriminator or not")
-    parser.add_argument("--d_optimizer", type=float, help="optimizer for the discriminator")
+    parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
 
     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
