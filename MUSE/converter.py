@@ -2,7 +2,7 @@ import sys
 
 import torch
 
-from dictionary import Dictionary
+from src.dictionary import Dictionary
 
 CPU = torch.device("cpu")
 
