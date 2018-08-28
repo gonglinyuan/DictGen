@@ -154,7 +154,7 @@ def read_txt_embeddings(emb_path, emb_dim, dic):
     vocab_size = len(dic)
     for i in range(vocab_size):
         word2id[dic[i][0]] = i
-    emb = torch.zeros(vocab_size, emb_dim, dtype=torch.float)
+    emb = torch.zeros(vocab_size + 1, emb_dim, dtype=torch.float)
     with io.open(emb_path, 'r', encoding='utf-8', newline='\n', errors='ignore') as f:
         for i, line in enumerate(f):
             if i == 0:
@@ -167,6 +167,22 @@ def read_txt_embeddings(emb_path, emb_dim, dic):
                 vec = np.fromstring(vec, sep=' ')
                 if word in word2id:
                     emb[word2id[word], :] = torch.from_numpy(vec[None])
+    return emb
+
+
+def normalize_embeddings(emb, types, mean=None):
+    eps = 1e-3
+    for t in types.split(','):
+        if t == '':
+            continue
+        if t == 'center':
+            if mean is None:
+                mean = emb.mean(0, keepdim=True)
+            emb.sub_(mean.expand_as(emb))
+        elif t == 'renorm':
+            emb.div_((emb.norm(2, 1, keepdim=True) + eps).expand_as(emb))
+        else:
+            raise Exception('Unknown normalization type: "%s"' % t)
     return emb
 
 
@@ -211,6 +227,7 @@ def main():
     parser.add_argument("--m_lr", type=float, help="max learning rate for the mapping")
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
+    parser.add_argument("--normalize", type=str, help="how to normalize the embedding")
 
     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
@@ -230,10 +247,10 @@ def main():
                                os.path.join(params.dataDir, params.dic_path_1),
                                max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
-    emb_weight_0 = read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_0),
-                                       params.emb_dim, corpus_data_0.dic)
-    emb_weight_1 = read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_1),
-                                       params.emb_dim, corpus_data_1.dic)
+    emb_weight_0 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_0),
+                                                            params.emb_dim, corpus_data_0.dic), params.normalize)
+    emb_weight_1 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_1),
+                                                            params.emb_dim, corpus_data_1.dic), params.normalize)
     trainer.skip_gram[0].u.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[0].v.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[1].u.weight.data.copy_(emb_weight_1)
