@@ -230,8 +230,10 @@ def main():
                                os.path.join(params.dataDir, params.dic_path_1),
                                max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
-    emb_weight_0 = read_txt_embeddings(params.emb_path_0, params.emb_dim, corpus_data_0.dic)
-    emb_weight_1 = read_txt_embeddings(params.emb_path_1, params.emb_dim, corpus_data_1.dic)
+    emb_weight_0 = read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_0),
+                                       params.emb_dim, corpus_data_0.dic)
+    emb_weight_1 = read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_1),
+                                       params.emb_dim, corpus_data_1.dic)
     trainer.skip_gram[0].u.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[0].v.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[1].u.weight.data.copy_(emb_weight_1)
