@@ -14,6 +14,7 @@ import optimizers
 from corpus_data import concat_collate, BlockRandomSampler, CorpusData
 from discriminator import Discriminator
 from skip_gram import SkipGram
+from src.dictionary import Dictionary
 from word_sampler import WordSampler
 
 GPU = torch.device("cuda:0")
@@ -186,6 +187,14 @@ def normalize_embeddings(emb, types, mean=None):
     return emb
 
 
+def convert_dic(dic, lang):
+    id2word, word2id = {}, {}
+    for i in range(len(dic)):
+        id2word[i] = dic[i][0]
+        word2id[dic[i][0]] = i
+    return Dictionary(id2word, word2id, lang)
+
+
 def main():
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     parser = argparse.ArgumentParser(description="adversarial training")
@@ -228,6 +237,9 @@ def main():
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
     parser.add_argument("--normalize", type=str, help="how to normalize the embedding")
+
+    parser.add_argument("--src_lang", type=str, help="language of embedding 0")
+    parser.add_argument("--tgt_lang", type=str, help="language of embedding 1")
 
     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
@@ -285,14 +297,18 @@ def main():
             c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
             step += 1
         if params.checkpoint and (i + 1) % checkpoint_freq == 0:
-            torch.save({"skip_gram_0": trainer.skip_gram[0].state_dict(),
-                        "skip_gram_1": trainer.skip_gram[1].state_dict(),
-                        "discriminator": trainer.discriminator.state_dict()},
-                       os.path.join(out_path, f"model-epoch{(i + 1) // checkpoint_freq}.pt"))
-    torch.save({"skip_gram_0": trainer.skip_gram[0].state_dict(),
-                "skip_gram_1": trainer.skip_gram[1].state_dict(),
-                "discriminator": trainer.discriminator.state_dict()},
-               os.path.join(out_path, f"model.pt"))
+            src_emb = ((trainer.skip_gram[0].u.weight.data.detach() +
+                        trainer.skip_gram[0].v.weight.data.detach()) * 0.5)[:-1]
+            tgt_emb = ((trainer.skip_gram[1].u.weight.data.detach() +
+                        trainer.skip_gram[1].v.weight.data.detach()) * 0.5)[:-1]
+            with torch.no_grad():
+                src_emb = trainer.mapping(src_emb)
+            src_dic = convert_dic(corpus_data_0.dic, params.src_lang)
+            tgt_dic = convert_dic(corpus_data_1.dic, params.tgt_lang)
+            torch.save({"dico": src_dic, "vectors": src_emb},
+                       os.path.join(out_path, f"{params.src_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
+            torch.save({"dico": tgt_dic, "vectors": tgt_emb},
+                       os.path.join(out_path, f"{params.tgt_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
     print(params)
 
 
