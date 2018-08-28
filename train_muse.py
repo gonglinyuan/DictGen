@@ -117,16 +117,16 @@ class Trainer:
         return x, y
 
     def adversarial_step(self):
-        for id in [0, 1]:
-            self.a_optimizer[id].zero_grad()
+        # for id in [0, 1]:
+        #     self.a_optimizer[id].zero_grad()
         self.m_optimizer.zero_grad()
         self.discriminator.eval()
         x, y = self.get_adv_batch(reverse=True)
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
         loss.backward()
-        for id in [0, 1]:
-            self.a_optimizer[id].step()
+        # for id in [0, 1]:
+        #     self.a_optimizer[id].step()
         self.m_optimizer.step()
         _orthogonalize(self.mapping, self.m_beta)
         return loss.item()
