@@ -105,8 +105,9 @@ class Trainer:
     def get_adv_batch(self, *, reverse):
         batch = [torch.LongTensor([self.sampler[id].sample() for _ in range(self.d_bs)]).view(self.d_bs, 1).to(GPU)
                  for id in [0, 1]]
-        x = [((self.skip_gram[id].u(batch[id]) + self.skip_gram[id].v(batch[id])) * 0.5).view(self.d_bs, -1)
-             for id in [0, 1]]
+        with torch.no_grad():
+            x = [((self.skip_gram[id].u(batch[id]) + self.skip_gram[id].v(batch[id])) * 0.5).view(self.d_bs, -1)
+                 for id in [0, 1]]
         x[0] = self.mapping(x[0])
         x = torch.cat(x, 0)
         y = torch.FloatTensor(self.d_bs * 2).to(GPU).uniform_(0.0, self.smooth)
