@@ -288,12 +288,12 @@ def main():
         a_loss += trainer.adversarial_step()
         c += 1
         if c >= out_freq:
-            vis.line(Y=torch.FloatTensor([trainer.sg_scheduler[0].factor * params.sg_lr]), X=torch.LongTensor([step]),
-                     win="sg_lr", env=params.out_path, opts={"title": "sg_lr"}, update="append")
-            vis.line(Y=torch.FloatTensor([trainer.a_scheduler[0].factor * params.a_lr]), X=torch.LongTensor([step]),
-                     win="a_lr", env=params.out_path, opts={"title": "a_lr"}, update="append")
-            vis.line(Y=torch.FloatTensor([trainer.d_scheduler.factor * params.d_lr]), X=torch.LongTensor([step]),
-                     win="d_lr", env=params.out_path, opts={"title": "d_lr"}, update="append")
+            # vis.line(Y=torch.FloatTensor([trainer.sg_scheduler[0].factor * params.sg_lr]), X=torch.LongTensor([step]),
+            #          win="sg_lr", env=params.out_path, opts={"title": "sg_lr"}, update="append")
+            # vis.line(Y=torch.FloatTensor([trainer.a_scheduler[0].factor * params.a_lr]), X=torch.LongTensor([step]),
+            #          win="a_lr", env=params.out_path, opts={"title": "a_lr"}, update="append")
+            # vis.line(Y=torch.FloatTensor([trainer.d_scheduler.factor * params.d_lr]), X=torch.LongTensor([step]),
+            #          win="d_lr", env=params.out_path, opts={"title": "d_lr"}, update="append")
             vis.line(Y=torch.FloatTensor([sg_loss[0] / c]), X=torch.LongTensor([step]),
                      win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
             vis.line(Y=torch.FloatTensor([sg_loss[1] / c]), X=torch.LongTensor([step]),
