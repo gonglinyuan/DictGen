@@ -52,5 +52,5 @@ def get_sgd_cosine(parameters, n_batch, *, lr, wd=0.0):
 
 def get_sgd_adapt(parameters, *, lr, wd=0.0):
     optimizer = optim.SGD(parameters, lr=lr, weight_decay=wd)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=1, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=0, verbose=True)
     return optimizer, scheduler
