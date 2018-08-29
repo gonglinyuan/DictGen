@@ -46,7 +46,9 @@ class Trainer:
         self.discriminator = Discriminator(params.emb_dim, n_layers=params.d_n_layers, n_units=params.d_n_units,
                                            drop_prob=params.d_drop_prob, drop_prob_input=params.d_drop_prob_input,
                                            leaky=params.d_leaky, batch_norm=params.d_bn).to(GPU)
-        self.mapping = nn.Linear(params.emb_dim, params.emb_dim, bias=False).to(GPU)
+        self.mapping = nn.Linear(params.emb_dim, params.emb_dim, bias=False)
+        self.mapping.weight.data.copy_(torch.diag(torch.ones(params.emb_dim)))
+        self.mapping = self.mapping.to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_cosine(self.skip_gram[id].parameters(), params.n_steps,
