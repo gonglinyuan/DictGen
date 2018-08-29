@@ -277,7 +277,7 @@ def main():
     trainer.skip_gram[1].v.weight.data.copy_(emb_weight_1)
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
-    out_freq, checkpoint_freq = 500, params.n_steps // 10
+    out_freq, checkpoint_freq = 1000, params.n_steps // 5
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for i in trange(params.n_steps):
         trainer.scheduler_step()
