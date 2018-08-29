@@ -14,7 +14,9 @@ import optimizers
 from corpus_data import concat_collate, BlockRandomSampler, CorpusData
 from discriminator import Discriminator
 from skip_gram import SkipGram
+from src.dico_builder import get_candidates, build_dictionary
 from src.dictionary import Dictionary
+from src.evaluation import Evaluator
 from word_sampler import WordSampler
 
 GPU = torch.device("cuda:0")
@@ -51,21 +53,20 @@ class Trainer:
         self.mapping = self.mapping.to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd_cosine(self.skip_gram[id].parameters(), params.n_steps,
-                                                             lr=params.sg_lr)
+            optimizer, scheduler = optimizers.get_sgd_adapt(self.skip_gram[id].parameters(),
+                                                            lr=params.sg_lr)
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd_cosine(
+            optimizer, scheduler = optimizers.get_sgd_adapt(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
-                params.n_steps, lr=params.a_lr)
+                lr=params.a_lr)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
-            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_cosine(self.discriminator.parameters(),
-                                                                           params.n_steps,
-                                                                           lr=params.d_lr, wd=params.d_wd)
+            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_adapt(self.discriminator.parameters(),
+                                                                          lr=params.d_lr, wd=params.d_wd)
 
         elif params.d_optimizer == "RMSProp":
             self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop_linear(self.discriminator.parameters(),
@@ -74,8 +75,8 @@ class Trainer:
         else:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         if params.m_optimizer == "SGD":
-            self.m_optimizer, self.m_scheduler = optimizers.get_sgd_cosine(self.mapping.parameters(), params.n_steps,
-                                                                           lr=params.m_lr, wd=params.m_wd)
+            self.m_optimizer, self.m_scheduler = optimizers.get_sgd_adapt(self.mapping.parameters(),
+                                                                          lr=params.m_lr, wd=params.m_wd)
         elif params.m_optimizer == "RMSProp":
             self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop_linear(self.mapping.parameters(),
                                                                                params.n_steps,
@@ -149,12 +150,12 @@ class Trainer:
         self.d_optimizer.step()
         return loss.item()
 
-    def scheduler_step(self):
+    def scheduler_step(self, metric):
         for id in [0, 1]:
-            self.sg_scheduler[id].step()
-            self.a_scheduler[id].step()
-        self.d_scheduler.step()
-        self.m_scheduler.step()
+            self.sg_scheduler[id].step(metric)
+            self.a_scheduler[id].step(metric)
+        self.d_scheduler.step(metric)
+        self.m_scheduler.step(metric)
 
 
 def read_txt_embeddings(emb_path, emb_dim, dic):
@@ -200,6 +201,52 @@ def convert_dic(dic, lang):
         id2word[i] = dic[i][0]
         word2id[dic[i][0]] = i
     return Dictionary(id2word, word2id, lang)
+
+
+def dist_mean_cosine(src_emb, tgt_emb):
+    """
+    Mean-cosine model selection criterion.
+    """
+    # get normalized embeddings
+    src_emb = src_emb / src_emb.norm(2, 1, keepdim=True).expand_as(src_emb)
+    tgt_emb = tgt_emb / tgt_emb.norm(2, 1, keepdim=True).expand_as(tgt_emb)
+
+    # build dictionary
+    dico_method = 'csls_knn_10'
+    dico_build = 'S2T'
+    dico_max_size = 10000
+
+    # temp params / dictionary generation
+    class Dummy:
+        def __init__(self):
+            self.dico_eval = "default"
+            self.dico_method = "csls_knn_10"
+            self.dico_build = "S2T"
+            self.dico_threshold = 0
+            self.dico_max_rank = 15000
+            self.dico_min_size = 0
+            self.dico_max_size = 0
+            self.cuda = True
+
+    _params = Dummy()
+    _params.dico_method = dico_method
+    _params.dico_build = dico_build
+    _params.dico_threshold = 0
+    _params.dico_max_rank = 10000
+    _params.dico_min_size = 0
+    _params.dico_max_size = dico_max_size
+    s2t_candidates = get_candidates(src_emb, tgt_emb, _params)
+    t2s_candidates = get_candidates(tgt_emb, src_emb, _params)
+    dico = build_dictionary(src_emb, tgt_emb, _params, s2t_candidates, t2s_candidates)
+    # mean cosine
+    if dico is None:
+        mean_cosine = -1e9
+    else:
+        mean_cosine = (src_emb[dico[:dico_max_size, 0]] * tgt_emb[dico[:dico_max_size, 1]]).sum(1).mean()
+    mean_cosine = mean_cosine.item() if isinstance(mean_cosine, torch.Tensor) else mean_cosine
+    print("Mean cosine (%s method, %s build, %i max size): %.5f"
+          % (dico_method, _params.dico_build, dico_max_size, mean_cosine))
+    return mean_cosine
 
 
 def main():
@@ -282,7 +329,7 @@ def main():
     out_freq, checkpoint_freq = 1000, params.n_steps // 5
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for i in trange(params.n_steps):
-        trainer.scheduler_step()
+        # trainer.scheduler_step()
         # l0, l1 = trainer.skip_gram_step()
         # sg_loss[0] += l0
         # sg_loss[1] += l1
@@ -313,6 +360,7 @@ def main():
                         trainer.skip_gram[1].v.weight.data.detach()) * 0.5)[:-1]
             with torch.no_grad():
                 src_emb = trainer.mapping(src_emb)
+            trainer.scheduler_step(dist_mean_cosine(src_emb, tgt_emb))
             src_dic = convert_dic(corpus_data_0.dic, params.src_lang)
             tgt_dic = convert_dic(corpus_data_1.dic, params.tgt_lang)
             torch.save({"dico": src_dic, "vectors": src_emb},

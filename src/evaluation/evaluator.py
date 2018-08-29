@@ -23,17 +23,13 @@ logger = getLogger()
 
 class Evaluator(object):
 
-    def __init__(self, trainer):
+    def __init__(self, src_emb, tgt_emb, mapping):
         """
         Initialize evaluator.
         """
-        self.src_emb = trainer.src_emb
-        self.tgt_emb = trainer.tgt_emb
-        self.src_dico = trainer.src_dico
-        self.tgt_dico = trainer.tgt_dico
-        self.mapping = trainer.mapping
-        self.discriminator = trainer.discriminator
-        self.params = trainer.params
+        self.src_emb = src_emb
+        self.tgt_emb = tgt_emb
+        self.mapping = mapping
 
     def monolingual_wordsim(self, to_log):
         """
@@ -46,7 +42,7 @@ class Evaluator(object):
         tgt_ws_scores = get_wordsim_scores(
             self.tgt_dico.lang, self.tgt_dico.word2id,
             self.tgt_emb.weight.data.cpu().numpy()
-        ) if self.params.tgt_lang else None
+        ) if self.tgt_lang else None
         if src_ws_scores is not None:
             src_ws_monolingual_scores = np.mean(list(src_ws_scores.values()))
             logger.info("Monolingual source word similarity score average: %.5f" % src_ws_monolingual_scores)
@@ -70,7 +66,7 @@ class Evaluator(object):
             self.src_dico.lang, self.src_dico.word2id,
             self.mapping(self.src_emb.weight).data.cpu().numpy()
         )
-        if self.params.tgt_lang:
+        if self.tgt_lang:
             tgt_analogy_scores = get_wordanalogy_scores(
                 self.tgt_dico.lang, self.tgt_dico.word2id,
                 self.tgt_emb.weight.data.cpu().numpy()
@@ -80,7 +76,7 @@ class Evaluator(object):
             logger.info("Monolingual source word analogy score average: %.5f" % src_analogy_monolingual_scores)
             to_log['src_analogy_monolingual_scores'] = src_analogy_monolingual_scores
             to_log.update({'src_' + k: v for k, v in src_analogy_scores.items()})
-        if self.params.tgt_lang and tgt_analogy_scores is not None:
+        if self.tgt_lang and tgt_analogy_scores is not None:
             tgt_analogy_monolingual_scores = np.mean(list(tgt_analogy_scores.values()))
             logger.info("Monolingual target word analogy score average: %.5f" % tgt_analogy_monolingual_scores)
             to_log['tgt_analogy_monolingual_scores'] = tgt_analogy_monolingual_scores
@@ -117,7 +113,7 @@ class Evaluator(object):
                 self.src_dico.lang, self.src_dico.word2id, src_emb,
                 self.tgt_dico.lang, self.tgt_dico.word2id, tgt_emb,
                 method=method,
-                dico_eval=self.params.dico_eval
+                dico_eval="default"
             )
             to_log.update([('%s-%s' % (k, method), v) for k, v in results])
 
@@ -188,7 +184,17 @@ class Evaluator(object):
             dico_build = 'S2T'
             dico_max_size = 10000
             # temp params / dictionary generation
-            _params = deepcopy(self.params)
+            class Dummy:
+                def __init__(self):
+                    self.dico_eval = "default"
+                    self.dico_method = "csls_knn_10"
+                    self.dico_build = "S2T"
+                    self.dico_threshold = 0
+                    self.dico_max_rank = 15000
+                    self.dico_min_size = 0
+                    self.dico_max_size = 0
+                    self.cuda = True
+            _params = Dummy()
             _params.dico_method = dico_method
             _params.dico_build = dico_build
             _params.dico_threshold = 0
