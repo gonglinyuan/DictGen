@@ -2,14 +2,16 @@ import numpy as np
 
 
 class WordSampler:
-    def __init__(self, dic, *, n_urns, alpha):
+    def __init__(self, dic, *, n_urns, alpha, top=0):
         self.n_urns = n_urns
         self.urn = np.zeros(self.n_urns, dtype=np.int32)
         j = 0
         z = 0.0
-        for i in range(len(dic)):
+        if top == 0:
+            top = len(dic)
+        for i in range(top):
             z += dic[i][1] ** alpha
-        for i in range(len(dic)):
+        for i in range(top):
             c = dic[i][1] ** alpha
             for _ in range(int(c * self.n_urns / z)):
                 self.urn[j] = i

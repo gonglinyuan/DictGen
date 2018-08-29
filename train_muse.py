@@ -49,32 +49,35 @@ class Trainer:
         self.mapping = nn.Linear(params.emb_dim, params.emb_dim, bias=False).to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd(self.skip_gram[id].parameters(), params.n_steps,
-                                                      lr=params.sg_lr)
+            optimizer, scheduler = optimizers.get_sgd_linear(self.skip_gram[id].parameters(), params.n_steps,
+                                                             lr=params.sg_lr)
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd(
+            optimizer, scheduler = optimizers.get_sgd_linear(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
                 params.n_steps, lr=params.a_lr)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
-            self.d_optimizer, self.d_scheduler = optimizers.get_sgd(self.discriminator.parameters(), params.n_steps,
-                                                                    lr=params.d_lr, wd=params.d_wd)
+            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_linear(self.discriminator.parameters(),
+                                                                           params.n_steps,
+                                                                           lr=params.d_lr, wd=params.d_wd)
 
         elif params.d_optimizer == "RMSProp":
-            self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop(self.discriminator.parameters(), params.n_steps,
-                                                                        lr=params.d_lr, wd=params.d_wd)
+            self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop_linear(self.discriminator.parameters(),
+                                                                               params.n_steps,
+                                                                               lr=params.d_lr, wd=params.d_wd)
         else:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         if params.m_optimizer == "SGD":
-            self.m_optimizer, self.m_scheduler = optimizers.get_sgd(self.mapping.parameters(), params.n_steps,
-                                                                    lr=params.m_lr, wd=params.m_wd)
+            self.m_optimizer, self.m_scheduler = optimizers.get_sgd_linear(self.mapping.parameters(), params.n_steps,
+                                                                           lr=params.m_lr, wd=params.m_wd)
         elif params.m_optimizer == "RMSProp":
-            self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop(self.mapping.parameters(), params.n_steps,
-                                                                        lr=params.m_lr, wd=params.m_wd)
+            self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop_linear(self.mapping.parameters(),
+                                                                               params.n_steps,
+                                                                               lr=params.m_lr, wd=params.m_wd)
         else:
             raise Exception(f"Optimizer {params.m_optimizer} not found")
         self.m_beta = params.m_beta
@@ -86,8 +89,9 @@ class Trainer:
             _data_queue(corpus_data_1, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
                         batch_size=params.sg_bs)
         ]
-        self.sampler = [WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=0.75),
-                        WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=0.75)]
+        self.sampler = [
+            WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top),
+            WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top)]
         self.d_bs = params.d_bs
 
     def skip_gram_step(self):
@@ -238,6 +242,9 @@ def main():
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
     parser.add_argument("--normalize", type=str, help="how to normalize the embedding")
+
+    parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
+    parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
 
     parser.add_argument("--src_lang", type=str, help="language of embedding 0")
     parser.add_argument("--tgt_lang", type=str, help="language of embedding 1")

@@ -39,23 +39,23 @@ class Trainer:
                                            leaky=params.d_leaky, batch_norm=params.d_bn).to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd(self.skip_gram[id].parameters(), params.n_steps,
-                                                      lr=params.sg_lr)
+            optimizer, scheduler = optimizers.get_sgd_linear(self.skip_gram[id].parameters(), params.n_steps,
+                                                             lr=params.sg_lr)
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd(
+            optimizer, scheduler = optimizers.get_sgd_linear(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
                 params.n_steps, lr=params.a_lr)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
-            self.d_optimizer, self.d_scheduler = optimizers.get_sgd(self.discriminator.parameters(), params.n_steps,
-                                                                    lr=params.d_lr, wd=params.d_wd)
+            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_linear(self.discriminator.parameters(), params.n_steps,
+                                                                           lr=params.d_lr, wd=params.d_wd)
         elif params.d_optimizer == "RMSProp":
-            self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop(self.discriminator.parameters(), params.n_steps,
-                                                                        lr=params.d_lr, wd=params.d_wd)
+            self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop_linear(self.discriminator.parameters(), params.n_steps,
+                                                                               lr=params.d_lr, wd=params.d_wd)
         else:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         self.smooth = params.smooth

@@ -50,7 +50,7 @@ if __name__ == "__main__":
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=params.n_sentences,
                              num_workers=params.n_threads, pin_memory=True, sampler=BlockRandomSampler(corpus_data))
     model = SkipGram(corpus_data.vocab_size + 1, params.emb_dim).to(GPU)
-    optimizer, scheduler = optimizers.get_sgd(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
+    optimizer, scheduler = optimizers.get_sgd_linear(model.parameters(), params.n_epochs * len(data_loader), lr=params.lr)
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"))
     out_freq = (len(data_loader) + 99) // 100
