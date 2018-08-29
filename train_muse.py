@@ -49,19 +49,19 @@ class Trainer:
         self.mapping = nn.Linear(params.emb_dim, params.emb_dim, bias=False).to(GPU)
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd_linear(self.skip_gram[id].parameters(), params.n_steps,
+            optimizer, scheduler = optimizers.get_sgd_cosine(self.skip_gram[id].parameters(), params.n_steps,
                                                              lr=params.sg_lr)
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
-            optimizer, scheduler = optimizers.get_sgd_linear(
+            optimizer, scheduler = optimizers.get_sgd_cosine(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
                 params.n_steps, lr=params.a_lr)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
-            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_linear(self.discriminator.parameters(),
+            self.d_optimizer, self.d_scheduler = optimizers.get_sgd_cosine(self.discriminator.parameters(),
                                                                            params.n_steps,
                                                                            lr=params.d_lr, wd=params.d_wd)
 
@@ -72,7 +72,7 @@ class Trainer:
         else:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         if params.m_optimizer == "SGD":
-            self.m_optimizer, self.m_scheduler = optimizers.get_sgd_linear(self.mapping.parameters(), params.n_steps,
+            self.m_optimizer, self.m_scheduler = optimizers.get_sgd_cosine(self.mapping.parameters(), params.n_steps,
                                                                            lr=params.m_lr, wd=params.m_wd)
         elif params.m_optimizer == "RMSProp":
             self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop_linear(self.mapping.parameters(),
