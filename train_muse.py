@@ -274,7 +274,7 @@ def main():
     parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
-    parser.add_argument("--checkpoint", action="store_const", help="save a checkpoint after each epoch")
+    parser.add_argument("--checkpoint", action="store_true", help="save a checkpoint after each epoch")
 
     parser.add_argument("--d_n_layers", type=int, help="number of hidden layers of the discriminator")
     parser.add_argument("--d_n_units", type=int, help="number of units per hidden layer of the discriminator")
@@ -282,7 +282,7 @@ def main():
     parser.add_argument("--d_drop_prob_input", type=float, help="dropout probability of the input of the discriminator")
     parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
     parser.add_argument("--d_wd", type=float, help="weight decay of adversarial training for the discriminator")
-    parser.add_argument("--d_bn", action="store_const", help="turn on batch normalization for the discriminator or not")
+    parser.add_argument("--d_bn", action="store_true", help="turn on batch normalization for the discriminator or not")
     parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
     parser.add_argument("--d_n_steps", type=int, help="number of discriminator steps per interation")
 
