@@ -318,9 +318,9 @@ def main():
                                max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
     emb_weight_0 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_0),
-                                                            params.emb_dim, corpus_data_0.dic), params.normalize)
+                                                            params.emb_dim, corpus_data_0.dic), params.normalize_pre)
     emb_weight_1 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_1),
-                                                            params.emb_dim, corpus_data_1.dic), params.normalize)
+                                                            params.emb_dim, corpus_data_1.dic), params.normalize_pre)
     trainer.skip_gram[0].u.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[0].v.weight.data.copy_(emb_weight_0)
     trainer.skip_gram[1].u.weight.data.copy_(emb_weight_1)
@@ -362,8 +362,8 @@ def main():
             with torch.no_grad():
                 src_emb = trainer.mapping(src_emb)
             trainer.scheduler_step(dist_mean_cosine(src_emb, tgt_emb))
-            src_dic = convert_dic(corpus_data_0.dic, params.src_lang)
-            tgt_dic = convert_dic(corpus_data_1.dic, params.tgt_lang)
+            src_dic = normalize_embeddings(convert_dic(corpus_data_0.dic, params.src_lang), params.normalize_post)
+            tgt_dic = normalize_embeddings(convert_dic(corpus_data_1.dic, params.tgt_lang), params.normalize_post)
             torch.save({"dico": src_dic, "vectors": src_emb},
                        os.path.join(out_path, f"{params.src_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
             torch.save({"dico": tgt_dic, "vectors": tgt_emb},
