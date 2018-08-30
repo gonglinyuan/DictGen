@@ -208,8 +208,8 @@ def dist_mean_cosine(src_emb, tgt_emb):
     Mean-cosine model selection criterion.
     """
     # get normalized embeddings
-    src_emb = src_emb / src_emb.norm(2, 1, keepdim=True).expand_as(src_emb)
-    tgt_emb = tgt_emb / tgt_emb.norm(2, 1, keepdim=True).expand_as(tgt_emb)
+    src_emb = src_emb / src_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(src_emb)
+    tgt_emb = tgt_emb / tgt_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(tgt_emb)
 
     # build dictionary
     dico_method = 'csls_knn_10'
