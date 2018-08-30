@@ -329,9 +329,10 @@ def main():
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for i in trange(params.n_steps):
         # trainer.scheduler_step()
-        l0, l1 = trainer.skip_gram_step()
-        sg_loss[0] += l0
-        sg_loss[1] += l1
+        if i > checkpoint_freq:
+            l0, l1 = trainer.skip_gram_step()
+            sg_loss[0] += l0
+            sg_loss[1] += l1
         d_loss += sum([trainer.discriminator_step() for _ in range(params.d_n_steps)]) / params.d_n_steps
         a_loss += trainer.adversarial_step()
         c += 1
