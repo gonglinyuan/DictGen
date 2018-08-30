@@ -362,8 +362,10 @@ def main():
             with torch.no_grad():
                 src_emb = trainer.mapping(src_emb)
             trainer.scheduler_step(dist_mean_cosine(src_emb, tgt_emb))
-            src_dic = normalize_embeddings(convert_dic(corpus_data_0.dic, params.src_lang), params.normalize_post)
-            tgt_dic = normalize_embeddings(convert_dic(corpus_data_1.dic, params.tgt_lang), params.normalize_post)
+            src_dic = convert_dic(corpus_data_0.dic, params.src_lang)
+            tgt_dic = convert_dic(corpus_data_1.dic, params.tgt_lang)
+            src_emb = normalize_embeddings(src_emb, params.normalize_post)
+            tgt_emb = normalize_embeddings(tgt_emb, params.normalize_post)
             torch.save({"dico": src_dic, "vectors": src_emb},
                        os.path.join(out_path, f"{params.src_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
             torch.save({"dico": tgt_dic, "vectors": tgt_emb},
