@@ -154,7 +154,7 @@ class Trainer:
         for id in [0, 1]:
             self.sg_scheduler[id].step(metric)
             self.a_scheduler[id].step(metric)
-        self.d_scheduler.step(metric)
+        # self.d_scheduler.step(metric)
         self.m_scheduler.step(metric)
 
 
@@ -290,7 +290,7 @@ def main():
     parser.add_argument("--m_lr", type=float, help="max learning rate for the mapping")
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
-    parser.add_argument("--normalize", type=str, help="how to normalize the embedding")
+    parser.add_argument("--normalize", type=str, default="", help="how to normalize the embedding")
 
     parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
     parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
