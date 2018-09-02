@@ -1,14 +1,12 @@
 import argparse
-import io
 import os
 from datetime import datetime
 
-import numpy as np
+import fastText
 import torch
 import torch.nn as nn
 import visdom
 from torch.utils.data import DataLoader
-from tqdm import trange
 
 import optimizers
 from corpus_data import concat_collate, BlockRandomSampler, CorpusData
@@ -108,11 +106,14 @@ class Trainer:
             losses.append(loss.item())
         return losses[0], losses[1]
 
-    def get_adv_batch(self, *, reverse):
+    def get_adv_batch(self, *, reverse, fix_embedding=False):
         batch = [torch.LongTensor([self.sampler[id].sample() for _ in range(self.d_bs)]).view(self.d_bs, 1).to(GPU)
                  for id in [0, 1]]
-        x = [((self.skip_gram[id].u(batch[id]) + self.skip_gram[id].v(batch[id])) * 0.5).view(self.d_bs, -1)
-             for id in [0, 1]]
+        if fix_embedding:
+            with torch.no_grad():
+                x = [self.skip_gram[id].u(batch[id]).view(self.d_bs, -1) for id in [0, 1]]
+        else:
+            x = [self.skip_gram[id].u(batch[id]).view(self.d_bs, -1) for id in [0, 1]]
         x[0] = self.mapping(x[0])
         x = torch.cat(x, 0)
         y = torch.FloatTensor(self.d_bs * 2).to(GPU).uniform_(0.0, self.smooth)
@@ -122,12 +123,12 @@ class Trainer:
             y[self.d_bs:] = 1 - y[self.d_bs:]
         return x, y
 
-    def adversarial_step(self):
+    def adversarial_step(self, fix_embedding=False):
         for id in [0, 1]:
             self.a_optimizer[id].zero_grad()
         self.m_optimizer.zero_grad()
         self.discriminator.eval()
-        x, y = self.get_adv_batch(reverse=True)
+        x, y = self.get_adv_batch(reverse=True, fix_embedding=fix_embedding)
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
         loss.backward()
@@ -156,25 +157,17 @@ class Trainer:
         self.m_scheduler.step(metric)
 
 
-def read_txt_embeddings(emb_path, emb_dim, dic):
-    word2id = {}
+def read_bin_embeddings(emb_path, emb_dim, dic):
     vocab_size = len(dic)
+    u = torch.empty(vocab_size + 1, emb_dim, dtype=torch.float)
+    v = torch.empty(vocab_size + 1, emb_dim, dtype=torch.float).normal_(mean=0, std=emb_dim ** (-0.25))
+    model = fastText.load_model(emb_path)
+    out_matrix = model.get_output_matrix()
     for i in range(vocab_size):
-        word2id[dic[i][0]] = i
-    emb = torch.zeros(vocab_size + 1, emb_dim, dtype=torch.float)
-    with io.open(emb_path, 'r', encoding='utf-8', newline='\n', errors='ignore') as f:
-        for i, line in enumerate(f):
-            if i == 0:
-                split = line.split()
-                assert len(split) == 2
-                assert emb_dim == int(split[1])
-            else:
-                word, vec = line.rstrip().split(' ', 1)
-                word = word.lower()
-                vec = np.fromstring(vec, sep=' ')
-                if word in word2id:
-                    emb[word2id[word], :] = torch.from_numpy(vec[None])
-    return emb
+        u[i, :] = model.get_word_vector(dic[i][0])
+        j = model.get_word_id(dic[i][0])
+        v[i, :] = out_matrix[j, :]
+    return u, v
 
 
 def normalize_embeddings(emb, types, mean=None):
@@ -202,19 +195,12 @@ def convert_dic(dic, lang):
 
 
 def dist_mean_cosine(src_emb, tgt_emb):
-    """
-    Mean-cosine model selection criterion.
-    """
-    # get normalized embeddings
     src_emb = src_emb / src_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(src_emb)
     tgt_emb = tgt_emb / tgt_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(tgt_emb)
-
-    # build dictionary
     dico_method = 'csls_knn_10'
     dico_build = 'S2T'
     dico_max_size = 10000
 
-    # temp params / dictionary generation
     class Dummy:
         def __init__(self):
             self.dico_eval = "default"
@@ -236,7 +222,6 @@ def dist_mean_cosine(src_emb, tgt_emb):
     s2t_candidates = get_candidates(src_emb, tgt_emb, _params)
     t2s_candidates = get_candidates(tgt_emb, src_emb, _params)
     dico = build_dictionary(src_emb, tgt_emb, _params, s2t_candidates, t2s_candidates)
-    # mean cosine
     if dico is None:
         mean_cosine = -1e9
     else:
@@ -250,6 +235,8 @@ def dist_mean_cosine(src_emb, tgt_emb):
 def main():
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     parser = argparse.ArgumentParser(description="adversarial training")
+
+    # Paths
     parser.add_argument("corpus_path_0", type=str, help="path of corpus 0")
     parser.add_argument("corpus_path_1", type=str, help="path of corpus 1")
     parser.add_argument("dic_path_0", type=str, help="path of dictionary 0")
@@ -257,48 +244,56 @@ def main():
     parser.add_argument("emb_path_0", type=str, help="path of embedding 0")
     parser.add_argument("emb_path_1", type=str, help="path of embedding 1")
     parser.add_argument("--out_path", type=str, default=timestamp, help="path of all outputs")
+    parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
+    parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
+    parser.add_argument("--checkpoint", action="store_true", help="save a checkpoint after each epoch")
+    parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
+    parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
+
+    # Global settings
+    parser.add_argument("--src_lang", type=str, help="language of embedding 0")
+    parser.add_argument("--tgt_lang", type=str, help="language of embedding 1")
+    parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
+    parser.add_argument("--n_epochs", type=int, help="number of epochs")
+    parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
+    parser.add_argument("--epoch_adv", type=int, help="the epoch to start adversarial training for embeddings")
+    parser.add_argument("--epoch_sg", type=int, help="the epoch to start skip-gram training")
+    parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
+    parser.add_argument("--normalize_pre", type=str, default="", help="how to normalize the embedding before training")
+    parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
+
+    # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
     parser.add_argument("--n_threads", type=int, help="number of data loader threads")
     parser.add_argument("--sg_bs", type=int, help="batch size")
-    parser.add_argument("--d_bs", type=int, help="batch size for the discriminator")
     parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
     parser.add_argument("--sg_lr", type=float, help="initial learning rate of skip-gram")
-    parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
-    parser.add_argument("--d_lr", type=float, help="max learning rate of adversarial training for the discriminator")
-    parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
-    parser.add_argument("--n_steps", type=int, help="number of iterations")
-    parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
-    parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
-    parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
-    parser.add_argument("--checkpoint", action="store_true", help="save a checkpoint after each epoch")
 
+    # Discriminator settings
     parser.add_argument("--d_n_layers", type=int, help="number of hidden layers of the discriminator")
     parser.add_argument("--d_n_units", type=int, help="number of units per hidden layer of the discriminator")
     parser.add_argument("--d_drop_prob", type=float, help="dropout probability after each layer of the discriminator")
     parser.add_argument("--d_drop_prob_input", type=float, help="dropout probability of the input of the discriminator")
     parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
+    parser.add_argument("--d_bs", type=int, help="batch size for the discriminator")
+    parser.add_argument("--d_lr", type=float, help="max learning rate of adversarial training for the discriminator")
     parser.add_argument("--d_wd", type=float, help="weight decay of adversarial training for the discriminator")
     parser.add_argument("--d_bn", action="store_true", help="turn on batch normalization for the discriminator or not")
     parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
     parser.add_argument("--d_n_steps", type=int, help="number of discriminator steps per interation")
 
+    # Mapping settings
     parser.add_argument("--m_optimizer", type=str, help="optimizer for the mapping")
     parser.add_argument("--m_lr", type=float, help="max learning rate for the mapping")
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
-    parser.add_argument("--normalize_pre", type=str, default="", help="how to normalize the embedding before training")
-    parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
 
+    # Adversarial training settings
+    parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
     parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
     parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
-
-    parser.add_argument("--src_lang", type=str, help="language of embedding 0")
-    parser.add_argument("--tgt_lang", type=str, help="language of embedding 1")
-
-    parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
-    parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
 
     params = parser.parse_args()
 
@@ -315,60 +310,47 @@ def main():
                                os.path.join(params.dataDir, params.dic_path_1),
                                max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data_0, corpus_data_1, params=params)
-    emb_weight_0 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_0),
-                                                            params.emb_dim, corpus_data_0.dic), params.normalize_pre)
-    emb_weight_1 = normalize_embeddings(read_txt_embeddings(os.path.join(params.dataDir, params.emb_path_1),
-                                                            params.emb_dim, corpus_data_1.dic), params.normalize_pre)
-    trainer.skip_gram[0].u.weight.data.copy_(emb_weight_0)
-    trainer.skip_gram[0].v.weight.data.copy_(emb_weight_0)
-    trainer.skip_gram[1].u.weight.data.copy_(emb_weight_1)
-    trainer.skip_gram[1].v.weight.data.copy_(emb_weight_1)
+    emb0_u, emb0_v = read_bin_embeddings(os.path.join(params.dataDir, params.emb_path_0),
+                                         params.emb_dim, corpus_data_0.dic)
+    emb1_u, emb1_v = read_bin_embeddings(os.path.join(params.dataDir, params.emb_path_1),
+                                         params.emb_dim, corpus_data_1.dic)
+    trainer.skip_gram[0].u.weight.data.copy_(normalize_embeddings(emb0_u, params.normalize_pre))
+    trainer.skip_gram[0].v.weight.data.copy_(normalize_embeddings(emb0_v, params.normalize_pre))
+    trainer.skip_gram[1].u.weight.data.copy_(normalize_embeddings(emb1_u, params.normalize_pre))
+    trainer.skip_gram[1].v.weight.data.copy_(normalize_embeddings(emb1_v, params.normalize_pre))
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
-    out_freq, checkpoint_freq = 1000, params.n_steps // 10
+    out_freq = 500
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
-    for i in trange(params.n_steps):
-        # trainer.scheduler_step()
-        if i > checkpoint_freq:
-            l0, l1 = trainer.skip_gram_step()
-            sg_loss[0] += l0
-            sg_loss[1] += l1
-        d_loss += sum([trainer.discriminator_step() for _ in range(params.d_n_steps)]) / params.d_n_steps
-        a_loss += trainer.adversarial_step()
-        c += 1
-        if c >= out_freq:
-            # vis.line(Y=torch.FloatTensor([trainer.sg_scheduler[0].factor * params.sg_lr]), X=torch.LongTensor([step]),
-            #          win="sg_lr", env=params.out_path, opts={"title": "sg_lr"}, update="append")
-            # vis.line(Y=torch.FloatTensor([trainer.a_scheduler[0].factor * params.a_lr]), X=torch.LongTensor([step]),
-            #          win="a_lr", env=params.out_path, opts={"title": "a_lr"}, update="append")
-            # vis.line(Y=torch.FloatTensor([trainer.d_scheduler.factor * params.d_lr]), X=torch.LongTensor([step]),
-            #          win="d_lr", env=params.out_path, opts={"title": "d_lr"}, update="append")
-            vis.line(Y=torch.FloatTensor([sg_loss[0] / c]), X=torch.LongTensor([step]),
-                     win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
-            vis.line(Y=torch.FloatTensor([sg_loss[1] / c]), X=torch.LongTensor([step]),
-                     win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
-            vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
-                     win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
-            vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
-                     win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
-            c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
-            step += 1
-        if params.checkpoint and (i + 1) % checkpoint_freq == 0:
-            src_emb = ((trainer.skip_gram[0].u.weight.data.detach() +
-                        trainer.skip_gram[0].v.weight.data.detach()) * 0.5)[:-1]
-            tgt_emb = ((trainer.skip_gram[1].u.weight.data.detach() +
-                        trainer.skip_gram[1].v.weight.data.detach()) * 0.5)[:-1]
-            with torch.no_grad():
-                src_emb = trainer.mapping(src_emb)
-            trainer.scheduler_step(dist_mean_cosine(src_emb, tgt_emb))
-            src_dic = convert_dic(corpus_data_0.dic, params.src_lang)
-            tgt_dic = convert_dic(corpus_data_1.dic, params.tgt_lang)
-            src_emb = normalize_embeddings(src_emb, params.normalize_post)
-            tgt_emb = normalize_embeddings(tgt_emb, params.normalize_post)
-            torch.save({"dico": src_dic, "vectors": src_emb},
-                       os.path.join(out_path, f"{params.src_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
-            torch.save({"dico": tgt_dic, "vectors": tgt_emb},
-                       os.path.join(out_path, f"{params.tgt_lang}-epoch{(i + 1) // checkpoint_freq}.pth"))
+    for epoch in range(params.n_epochs):
+        for i in range(params.n_steps):
+            if epoch >= params.epoch_sg:
+                l0, l1 = trainer.skip_gram_step()
+                sg_loss[0] += l0
+                sg_loss[1] += l1
+            d_loss += sum([trainer.discriminator_step() for _ in range(params.d_n_steps)]) / params.d_n_steps
+            a_loss += trainer.adversarial_step(fix_embedding=epoch < params.epoch_adv)
+            c += 1
+            if c >= out_freq:
+                vis.line(Y=torch.FloatTensor([sg_loss[0] / c]), X=torch.LongTensor([step]),
+                         win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
+                vis.line(Y=torch.FloatTensor([sg_loss[1] / c]), X=torch.LongTensor([step]),
+                         win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
+                vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
+                         win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
+                vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
+                         win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
+                c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
+                step += 1
+        emb0, emb1 = trainer.skip_gram[0].u.weight.data.detach()[:-1], trainer.skip_gram[1].u.weight.data.detach()[:-1]
+        with torch.no_grad():
+            emb0 = trainer.mapping(emb0)
+        trainer.scheduler_step(dist_mean_cosine(emb0, emb1))
+        dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
+        emb0 = normalize_embeddings(emb0, params.normalize_post)
+        emb1 = normalize_embeddings(emb1, params.normalize_post)
+        torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
+        torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
     print(params)
 
 
