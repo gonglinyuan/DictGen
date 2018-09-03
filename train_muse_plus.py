@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import visdom
 from torch.utils.data import DataLoader
+from tqdm import trange
 
 import optimizers
 from corpus_data import concat_collate, BlockRandomSampler, CorpusData
@@ -322,8 +323,8 @@ def main():
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
-    for epoch in range(params.n_epochs):
-        for i in range(params.n_steps):
+    for epoch in trange(params.n_epochs):
+        for _ in trange(params.n_steps):
             if epoch >= params.epoch_sg:
                 l0, l1 = trainer.skip_gram_step()
                 sg_loss[0] += l0
