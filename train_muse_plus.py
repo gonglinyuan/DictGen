@@ -259,6 +259,7 @@ def main():
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
     parser.add_argument("--epoch_adv", type=int, help="the epoch to start adversarial training for embeddings")
     parser.add_argument("--epoch_sg", type=int, help="the epoch to start skip-gram training")
+    parser.add_argument("--interval_sg", type=int, help="the interval of training skip-gram")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
     parser.add_argument("--normalize_pre", type=str, default="", help="how to normalize the embedding before training")
     parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
@@ -325,7 +326,7 @@ def main():
     step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            if epoch >= params.epoch_sg:
+            if epoch >= params.epoch_sg and c % params.interval_sg == 0:
                 l0, l1 = trainer.skip_gram_step()
                 sg_loss[0] += l0
                 sg_loss[1] += l1
