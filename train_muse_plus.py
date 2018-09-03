@@ -164,9 +164,9 @@ def read_bin_embeddings(emb_path, emb_dim, dic):
     model = fastText.load_model(emb_path)
     out_matrix = model.get_output_matrix()
     for i in range(vocab_size):
-        u[i, :] = model.get_word_vector(dic[i][0])
+        u[i, :] = torch.from_numpy(model.get_word_vector(dic[i][0]))
         j = model.get_word_id(dic[i][0])
-        v[i, :] = out_matrix[j, :]
+        v[i, :] = torch.from_numpy(out_matrix[j, :])
     return u, v
 
 
