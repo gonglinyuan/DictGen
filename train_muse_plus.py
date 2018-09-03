@@ -179,9 +179,9 @@ def normalize_embeddings(emb, types, mean=None):
         if t == 'center':
             if mean is None:
                 mean = emb.mean(0, keepdim=True)
-            emb.sub_(mean.expand_as(emb))
+            return emb - mean.expand_as(emb)
         elif t == 'renorm':
-            emb.div_((emb.norm(2, 1, keepdim=True) + eps).expand_as(emb))
+            return emb / (emb.norm(2, 1, keepdim=True) + eps).expand_as(emb)
         else:
             raise Exception('Unknown normalization type: "%s"' % t)
     return emb
