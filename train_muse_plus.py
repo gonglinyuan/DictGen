@@ -334,9 +334,9 @@ def main():
             a_loss += trainer.adversarial_step(fix_embedding=epoch < params.epoch_adv)
             c += 1
             if c >= out_freq:
-                vis.line(Y=torch.FloatTensor([sg_loss[0] / c]), X=torch.LongTensor([step]),
+                vis.line(Y=torch.FloatTensor([sg_loss[0] / c * params.interval_sg]), X=torch.LongTensor([step]),
                          win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
-                vis.line(Y=torch.FloatTensor([sg_loss[1] / c]), X=torch.LongTensor([step]),
+                vis.line(Y=torch.FloatTensor([sg_loss[1] / c * params.interval_sg]), X=torch.LongTensor([step]),
                          win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
                 vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
                          win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
