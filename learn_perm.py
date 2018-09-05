@@ -1,5 +1,5 @@
-import datetime
 import argparse
+import datetime
 import os
 from datetime import datetime
 
@@ -7,15 +7,14 @@ import fastText
 import torch
 import torch.nn as nn
 import visdom
-from torch.utils.data import DataLoader
 from tqdm import trange
 
 import optimizers
-from corpus_data import concat_collate, BlockRandomSampler, CorpusData
+from corpus_data import CorpusData
 from skip_gram import SkipGram
-from src.dico_builder import get_candidates, build_dictionary
 from src.dictionary import Dictionary
 from word_sampler import WordSampler
+
 GPU = torch.device("cuda:0")
 CPU = torch.device("cpu")
 
@@ -40,6 +39,8 @@ class Trainer:
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
         self.p_valid_top = params.p_valid_top
+        self.emb_dim = params.emb_dim
+        self.vocab_size = params.vocab_size
         self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_adapt(self.perm.parameters(),
                                                                             lr=params.p_lr, wd=params.p_wd)
 
@@ -71,8 +72,20 @@ class Trainer:
             batch1 = self.perm(x0)  # Float[p_valid_top, p_sample_top]
             batch1 = torch.argmax(batch1, dim=1).view(self.p_valid_top, 1)  # Long[p_valid_top, 1]
             x1 = self.skip_gram[1].v(batch1).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
+            x0 = torch.einsum("ik,jk->ij", (x0, x0))
+            x1 = torch.einsum("ik,jk->ij", (x1, x1))
+            loss = torch.mean((x0 - x1) ** 2)
+        return loss.item()
 
-
+    def output(self):
+        lst = []
+        with torch.no_grad():
+            for i in range(0, self.vocab_size, self.p_bs):
+                batch = torch.arange(i * self.p_bs, min((i + 1) * self.p_bs, self.vocab_size)).view(-1, 1).to(GPU)
+                x = self.skip_gram[0].u(batch).view(-1, self.emb_dim)
+                y = self.perm(x).topk(dim=1, largest=True, sorted=True)  # Long[p_bs, 10]
+                lst.append(y)
+        return torch.cat(lst)  # Long[vocab_size, 10]
 
     def scheduler_step(self, metric):
         self.perm_scheduler.step(metric)
@@ -129,7 +142,6 @@ def main():
     parser.add_argument("--out_path", type=str, default=timestamp, help="path of all outputs")
     parser.add_argument("--vis_host", type=str, default="localhost", help="host name for Visdom")
     parser.add_argument("--vis_port", type=int, default=34029, help="port for Visdom")
-    parser.add_argument("--checkpoint", action="store_true", help="save a checkpoint after each epoch")
     parser.add_argument("--dataDir", type=str, default=".", help="path for data (Philly only)")
     parser.add_argument("--modelDir", type=str, default=".", help="path for outputs (Philly only)")
 
@@ -141,7 +153,6 @@ def main():
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
     parser.add_argument("--epoch_tune_emb", type=int, help="the epoch to start tuning embeddings")
     parser.add_argument("--normalize_pre", type=str, default="", help="how to normalize the embedding before training")
-    parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
 
     # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
@@ -193,14 +204,10 @@ def main():
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
                 c, p_loss = 0, 0.0
                 step += 1
-
-        emb0, emb1 = trainer.skip_gram[0].u.weight.data.detach()[:-1], trainer.skip_gram[1].u.weight.data.detach()[:-1]
-        with torch.no_grad():
-            emb0 = trainer.mapping(emb0)
-        trainer.scheduler_step(dist_mean_cosine(emb0, emb1))
+        valid_loss = trainer.valid_step()
+        print(f"epoch {epoch} loss is {valid_loss}")
+        trainer.scheduler_step(valid_loss)
         dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
-        emb0 = normalize_embeddings(emb0, params.normalize_post)
-        emb1 = normalize_embeddings(emb1, params.normalize_post)
-        torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
-        torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
+        model_output = trainer.output()
+        torch.save({"dic0": dic0, "dic1": dic1, "out": model_output}, os.path.join(out_path, f"out-epoch{epoch}.pth"))
     print(params)
