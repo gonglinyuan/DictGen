@@ -39,6 +39,7 @@ class Trainer:
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
+        self.p_valid_top = params.p_valid_top
         self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_adapt(self.perm.parameters(),
                                                                             lr=params.p_lr, wd=params.p_wd)
 
@@ -63,8 +64,19 @@ class Trainer:
         self.perm_optimizer.step()
         return loss.item()
 
+    def valid_step(self):
+        with torch.no_grad():
+            batch0 = torch.arange(self.p_valid_top).view(self.p_valid_top, 1).to(GPU)  # Long[p_valid_top, 1]
+            x0 = self.skip_gram[0].u(batch0).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
+            batch1 = self.perm(x0)  # Float[p_valid_top, p_sample_top]
+            batch1 = torch.argmax(batch1, dim=1).view(self.p_valid_top, 1)  # Long[p_valid_top, 1]
+            x1 = self.skip_gram[1].v(batch1).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
+
+
+
     def scheduler_step(self, metric):
         self.perm_scheduler.step(metric)
+
 
 def read_bin_embeddings(emb_path, emb_dim, dic):
     vocab_size = len(dic)
@@ -77,6 +89,7 @@ def read_bin_embeddings(emb_path, emb_dim, dic):
         j = model.get_word_id(dic[i][0])
         v[i, :] = torch.from_numpy(out_matrix[j, :])
     return u, v
+
 
 def normalize_embeddings(emb, types, mean=None):
     eps = 1e-3
@@ -93,6 +106,7 @@ def normalize_embeddings(emb, types, mean=None):
             raise Exception('Unknown normalization type: "%s"' % t)
     return emb
 
+
 def convert_dic(dic, lang):
     id2word, word2id = {}, {}
     for i in range(len(dic)):
@@ -100,46 +114,10 @@ def convert_dic(dic, lang):
         word2id[dic[i][0]] = i
     return Dictionary(id2word, word2id, lang)
 
-def dist_mean_cosine(src_emb, tgt_emb):
-    src_emb = src_emb / src_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(src_emb)
-    tgt_emb = tgt_emb / tgt_emb.norm(2, 1, keepdim=True).clamp(min=1e-3).expand_as(tgt_emb)
-    dico_method = 'csls_knn_10'
-    dico_build = 'S2T'
-    dico_max_size = 10000
-
-    class Dummy:
-        def __init__(self):
-            self.dico_eval = "default"
-            self.dico_method = "csls_knn_10"
-            self.dico_build = "S2T"
-            self.dico_threshold = 0
-            self.dico_max_rank = 15000
-            self.dico_min_size = 0
-            self.dico_max_size = 0
-            self.cuda = True
-
-    _params = Dummy()
-    _params.dico_method = dico_method
-    _params.dico_build = dico_build
-    _params.dico_threshold = 0
-    _params.dico_max_rank = 10000
-    _params.dico_min_size = 0
-    _params.dico_max_size = dico_max_size
-    s2t_candidates = get_candidates(src_emb, tgt_emb, _params)
-    t2s_candidates = get_candidates(tgt_emb, src_emb, _params)
-    dico = build_dictionary(src_emb, tgt_emb, _params, s2t_candidates, t2s_candidates)
-    if dico is None:
-        mean_cosine = -1e9
-    else:
-        mean_cosine = (src_emb[dico[:dico_max_size, 0]] * tgt_emb[dico[:dico_max_size, 1]]).sum(1).mean()
-    mean_cosine = mean_cosine.item() if isinstance(mean_cosine, torch.Tensor) else mean_cosine
-    print("Mean cosine (%s method, %s build, %i max size): %.5f"
-          % (dico_method, _params.dico_build, dico_max_size, mean_cosine))
-    return mean_cosine
 
 def main():
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    parser = argparse.ArgumentParser(description="adversarial training")
+    parser = argparse.ArgumentParser(description="permutation learning")
 
     # Paths
     parser.add_argument("corpus_path_0", type=str, help="path of corpus 0")
@@ -161,45 +139,23 @@ def main():
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
-    parser.add_argument("--epoch_adv", type=int, help="the epoch to start adversarial training for embeddings")
-    parser.add_argument("--epoch_sg", type=int, help="the epoch to start skip-gram training")
-    parser.add_argument("--interval_sg", type=int, help="the interval of training skip-gram")
-    parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
+    parser.add_argument("--epoch_tune_emb", type=int, help="the epoch to start tuning embeddings")
     parser.add_argument("--normalize_pre", type=str, default="", help="how to normalize the embedding before training")
     parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
 
     # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
-    parser.add_argument("--n_threads", type=int, help="number of data loader threads")
-    parser.add_argument("--sg_bs", type=int, help="batch size")
-    parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
-    parser.add_argument("--sg_lr", type=float, help="initial learning rate of skip-gram")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
 
-    # Discriminator settings
-    parser.add_argument("--d_n_layers", type=int, help="number of hidden layers of the discriminator")
-    parser.add_argument("--d_n_units", type=int, help="number of units per hidden layer of the discriminator")
-    parser.add_argument("--d_drop_prob", type=float, help="dropout probability after each layer of the discriminator")
-    parser.add_argument("--d_drop_prob_input", type=float, help="dropout probability of the input of the discriminator")
-    parser.add_argument("--d_leaky", type=float, help="slope of leaky ReLU of the discriminator")
-    parser.add_argument("--d_bs", type=int, help="batch size for the discriminator")
-    parser.add_argument("--d_lr", type=float, help="max learning rate of adversarial training for the discriminator")
-    parser.add_argument("--d_wd", type=float, help="weight decay of adversarial training for the discriminator")
-    parser.add_argument("--d_bn", action="store_true", help="turn on batch normalization for the discriminator or not")
-    parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
-    parser.add_argument("--d_n_steps", type=int, help="number of discriminator steps per interation")
-
-    # Mapping settings
-    parser.add_argument("--m_optimizer", type=str, help="optimizer for the mapping")
-    parser.add_argument("--m_lr", type=float, help="max learning rate for the mapping")
-    parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
-    parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
-
-    # Adversarial training settings
-    parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
-    parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
-    parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
+    # Permutation learning settings
+    parser.add_argument("--p_bs", type=int, help="batch size of permutation learning")
+    parser.add_argument("--p_lr", type=float, help="learning rate of permutation learning")
+    parser.add_argument("--p_wd", type=float, help="weight decay of permutation learning")
+    parser.add_argument("--p_n_units", type=int, help="number of hidden units in permutation model")
+    parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
+    parser.add_argument("--p_sample_factor", type=float, help="sample factor of permutation learning")
+    parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")
 
     params = parser.parse_args()
 
@@ -227,27 +183,17 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
-    step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
+    c, step, p_loss = 0, 0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            if epoch >= params.epoch_sg and c % params.interval_sg == 0:
-                l0, l1 = trainer.skip_gram_step()
-                sg_loss[0] += l0
-                sg_loss[1] += l1
-            d_loss += sum([trainer.discriminator_step() for _ in range(params.d_n_steps)]) / params.d_n_steps
-            a_loss += trainer.adversarial_step(fix_embedding=epoch < params.epoch_adv)
+            p_loss += trainer.perm_step(fix_embedding=epoch >= params.epoch_tune_emb)
             c += 1
             if c >= out_freq:
-                vis.line(Y=torch.FloatTensor([sg_loss[0] / c * params.interval_sg]), X=torch.LongTensor([step]),
-                         win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
-                vis.line(Y=torch.FloatTensor([sg_loss[1] / c * params.interval_sg]), X=torch.LongTensor([step]),
-                         win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
-                vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
-                         win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
-                vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
-                         win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
-                c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
+                vis.line(Y=torch.FloatTensor([p_loss / c]), X=torch.LongTensor([step]),
+                         win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
+                c, p_loss = 0, 0.0
                 step += 1
+
         emb0, emb1 = trainer.skip_gram[0].u.weight.data.detach()[:-1], trainer.skip_gram[1].u.weight.data.detach()[:-1]
         with torch.no_grad():
             emb0 = trainer.mapping(emb0)
