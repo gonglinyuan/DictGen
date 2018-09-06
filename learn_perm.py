@@ -65,17 +65,17 @@ class Trainer:
         self.perm_optimizer.step()
         return loss.item()
 
-    def valid_step(self):
-        with torch.no_grad():
-            batch0 = torch.arange(self.p_valid_top).view(self.p_valid_top, 1).to(GPU)  # Long[p_valid_top, 1]
-            x0 = self.skip_gram[0].u(batch0).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
-            batch1 = self.perm(x0)  # Float[p_valid_top, p_sample_top]
-            batch1 = torch.argmax(batch1, dim=1).view(self.p_valid_top, 1)  # Long[p_valid_top, 1]
-            x1 = self.skip_gram[1].v(batch1).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
-            x0 = torch.einsum("ik,jk->ij", (x0, x0))
-            x1 = torch.einsum("ik,jk->ij", (x1, x1))
-            loss = torch.mean((x0 - x1) ** 2)
-        return loss.item()
+    # def valid_step(self):
+    #     with torch.no_grad():
+    #         batch0 = torch.arange(self.p_valid_top).view(self.p_valid_top, 1).to(GPU)  # Long[p_valid_top, 1]
+    #         x0 = self.skip_gram[0].u(batch0).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
+    #         batch1 = self.perm(x0)  # Float[p_valid_top, p_sample_top]
+    #         batch1 = torch.argmax(batch1, dim=1).view(self.p_valid_top, 1)  # Long[p_valid_top, 1]
+    #         x1 = self.skip_gram[1].v(batch1).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
+    #         x0 = torch.einsum("ik,jk->ij", (x0, x0))
+    #         x1 = torch.einsum("ik,jk->ij", (x1, x1))
+    #         loss = torch.mean((x0 - x1) ** 2)
+    #     return loss.item()
 
     def output(self):
         lst = []
@@ -195,18 +195,20 @@ def main():
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
     c, step, p_loss = 0, 0, 0.0
+    v_loss, v_norm = 0.0, 0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
             p_loss += trainer.perm_step(fix_embedding=epoch >= params.epoch_tune_emb)
             c += 1
+            v_loss = v_loss * 0.999 + p_loss
+            v_norm = v_norm * 0.999 + 1.0
             if c >= out_freq:
                 vis.line(Y=torch.FloatTensor([p_loss / c]), X=torch.LongTensor([step]),
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
                 c, p_loss = 0, 0.0
                 step += 1
-        valid_loss = trainer.valid_step()
-        print(f"epoch {epoch} loss is {valid_loss}")
-        trainer.scheduler_step(valid_loss)
+        print(f"epoch {epoch} loss is {v_loss / v_norm}")
+        trainer.scheduler_step(v_loss)
         dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
         model_output = trainer.output()
         torch.save({"dic0": dic0, "dic1": dic1, "out": model_output}, os.path.join(out_path, f"out-epoch{epoch}.pth"))
