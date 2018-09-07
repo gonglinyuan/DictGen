@@ -38,6 +38,7 @@ class Trainer:
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
+        self.p_sample_top = params.p_sample_top
         # self.p_valid_top = params.p_valid_top
         self.emb_dim = params.emb_dim
         self.vocab_size_0, self.vocab_size_1 = corpus_data_0.vocab_size, corpus_data_1.vocab_size
@@ -56,9 +57,9 @@ class Trainer:
         x[0] = self.perm(x[0])
         if fix_embedding:
             with torch.no_grad():
-                x[0] = torch.mm(x[0], self.skip_gram[1].u.weight)
+                x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top])
         else:
-            x[0] = torch.mm(x[0], self.skip_gram[1].u.weight)
+            x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top])
         x = [torch.einsum("ik,jk->ij", (x[id], x[id])) for id in [0, 1]]
         loss = torch.mean((x[0] - x[1]) ** 2)
         loss.backward()
