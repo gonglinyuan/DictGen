@@ -195,23 +195,23 @@ def main():
     trainer.skip_gram[1].v.weight.data.copy_(normalize_embeddings(emb1_v, params.normalize_pre))
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
-    out_freq = 500
-    c, step, p_loss = 0, 0, 0.0
-    v_loss, v_norm = 0.0, 0
+    out_freq = 1000
+    step, valid_loss, valid_norm, train_loss, train_norm = 0, 0.0, 0, 0.0, 0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            p_loss += trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
-            c += 1
-            v_loss = v_loss * 0.999 + 0.001 * p_loss
-            v_norm = v_norm * 0.999 + 0.001 * 1.0
-            if c >= out_freq:
-                vis.line(Y=torch.FloatTensor([p_loss / c]), X=torch.LongTensor([step]),
+            p_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
+            train_loss += p_loss
+            train_norm += 1
+            valid_loss = valid_loss * 0.999 + 0.001 * p_loss
+            valid_norm = valid_norm * 0.999 + 0.001 * 1.0
+            if train_norm >= out_freq:
+                vis.line(Y=torch.FloatTensor([train_loss / train_norm]), X=torch.LongTensor([step]),
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
-                c, p_loss = 0, 0.0
+                train_norm, train_loss = 0, 0.0
                 step += 1
-        print(f"epoch {epoch} loss is {v_loss / v_norm}")
-        trainer.scheduler_step(v_loss)
-        v_loss, v_norm = 0.0, 0
+        print(f"epoch {epoch} loss is {valid_loss / valid_norm}")
+        trainer.scheduler_step(valid_loss)
+        valid_loss, valid_norm = 0.0, 0
         dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
         model_output = trainer.output()
         torch.save({"dic0": dic0, "dic1": dic1, "out": model_output}, os.path.join(out_path, f"out-epoch{epoch}.pth"))
