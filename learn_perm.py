@@ -164,6 +164,7 @@ def main():
     # Permutation learning settings
     parser.add_argument("--p_bs", type=int, help="batch size of permutation learning")
     parser.add_argument("--p_lr", type=float, help="learning rate of permutation learning")
+    parser.add_argument("--p_momentum", type=float, help="momentum of permutation learning")
     parser.add_argument("--p_wd", type=float, help="weight decay of permutation learning")
     parser.add_argument("--p_n_units", type=int, help="number of hidden units in permutation model")
     parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
