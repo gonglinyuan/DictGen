@@ -1,6 +1,6 @@
 import torch.optim as optim
 
-__all__ = ["get_sgd_linear", "get_rmsprop_linear", "get_sgd_exp", "get_sgd_adapt"]
+__all__ = ["get_sgd_linear", "get_rmsprop_linear", "get_sgd_exp", "get_sgd_adapt", "get_sgd_find_lr"]
 
 
 class LinearDecayLR(optim.lr_scheduler._LRScheduler):
@@ -50,7 +50,14 @@ def get_sgd_cosine(parameters, n_batch, *, lr, wd=0.0):
     return optimizer, scheduler
 
 
-def get_sgd_adapt(parameters, *, lr, wd=0.0):
-    optimizer = optim.SGD(parameters, lr=lr, weight_decay=wd)
+def get_sgd_adapt(parameters, *, lr, wd=0.0, momentum=0):
+    optimizer = optim.SGD(parameters, lr=lr, weight_decay=wd, momentum=momentum)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=0, verbose=True)
+    return optimizer, scheduler
+
+
+def get_sgd_find_lr(parameters, *, lr, wd=0.0, momentum=0):
+    optimizer = optim.SGD(parameters, lr=lr, weight_decay=wd, momentum=momentum)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=10000.0 * (1.0 / 40.0))
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=0, verbose=True)
     return optimizer, scheduler

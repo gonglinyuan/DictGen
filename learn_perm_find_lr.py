@@ -42,11 +42,12 @@ class Trainer:
         # self.p_valid_top = params.p_valid_top
         self.emb_dim = params.emb_dim
         self.vocab_size_0, self.vocab_size_1 = corpus_data_0.vocab_size, corpus_data_1.vocab_size
-        self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_adapt(self.perm.parameters(),
-                                                                            lr=params.p_lr, wd=params.p_wd,
-                                                                            momentum=params.p_momentum)
+        self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_find_lr(self.perm.parameters(),
+                                                                              lr=params.p_lr, wd=params.p_wd,
+                                                                              momentum=params.p_momentum)
 
     def perm_step(self, *, fix_embedding=False):
+        # TODO: fix fix_embedding=True
         self.perm_optimizer.zero_grad()
         batch = [torch.LongTensor([self.sampler[id].sample() for _ in range(self.p_bs)]).view(self.p_bs, 1).to(GPU)
                  for id in [0, 1]]
@@ -90,7 +91,7 @@ class Trainer:
         return torch.cat(lst)  # Long[vocab_size, 10]
 
     def scheduler_step(self, metric):
-        self.perm_scheduler.step(metric)
+        self.perm_scheduler.step()
 
 
 def read_bin_embeddings(emb_path, emb_dim, dic):
