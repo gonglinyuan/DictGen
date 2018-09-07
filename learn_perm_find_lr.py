@@ -213,6 +213,7 @@ def main():
                 step += 1
         print(f"epoch {epoch} loss is {v_loss / v_norm}")
         trainer.scheduler_step(v_loss)
+        v_loss, v_norm = 0.0, 0
         dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
         model_output = trainer.output()
         torch.save({"dic0": dic0, "dic1": dic1, "out": model_output}, os.path.join(out_path, f"out-epoch{epoch}.pth"))
