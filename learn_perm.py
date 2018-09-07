@@ -57,8 +57,7 @@ class Trainer:
             x = [self.skip_gram[id].u(batch[id]).view(self.p_bs, -1) for id in [0, 1]]
         x[0] = self.perm(x[0])
         if fix_embedding:
-            with torch.no_grad():
-                x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top])
+            x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top].detach())
         else:
             x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top])
         x = [torch.einsum("ik,jk->ij", (x[id], x[id])) for id in [0, 1]]
