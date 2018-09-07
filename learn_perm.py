@@ -38,7 +38,7 @@ class Trainer:
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
-        self.p_valid_top = params.p_valid_top
+        # self.p_valid_top = params.p_valid_top
         self.emb_dim = params.emb_dim
         self.vocab_size = params.vocab_size
         self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_adapt(self.perm.parameters(),
@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--p_n_units", type=int, help="number of hidden units in permutation model")
     parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
     parser.add_argument("--p_sample_factor", type=float, help="sample factor of permutation learning")
-    parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")
+    # parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")
 
     params = parser.parse_args()
 
