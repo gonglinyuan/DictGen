@@ -58,6 +58,6 @@ def get_sgd_adapt(parameters, *, lr, wd=0.0, momentum=0):
 
 def get_sgd_find_lr(parameters, *, lr, wd=0.0, momentum=0):
     optimizer = optim.SGD(parameters, lr=lr, weight_decay=wd, momentum=momentum)
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=10000.0 * (1.0 / 40.0))
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=10000.0 ** (1.0 / 40.0))
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=0, verbose=True)
     return optimizer, scheduler

@@ -203,7 +203,7 @@ def main():
             p_loss += trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
             c += 1
             v_loss = v_loss * 0.999 + 0.001 * p_loss
-            v_norm = v_norm * 0.999 + 1.0
+            v_norm = v_norm * 0.999 + 0.001 * 1.0
             if c >= out_freq:
                 vis.line(Y=torch.FloatTensor([p_loss / c]), X=torch.LongTensor([step]),
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
