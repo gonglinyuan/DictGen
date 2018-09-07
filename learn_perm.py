@@ -213,3 +213,7 @@ def main():
         model_output = trainer.output()
         torch.save({"dic0": dic0, "dic1": dic1, "out": model_output}, os.path.join(out_path, f"out-epoch{epoch}.pth"))
     print(params)
+
+
+if __name__ == '__main__':
+    main()
