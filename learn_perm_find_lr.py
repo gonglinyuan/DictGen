@@ -22,7 +22,7 @@ CPU = torch.device("cpu")
 class Permutation(nn.Module):
     def __init__(self, emb_dim, vocab_size, *, n_units):
         super(Permutation, self).__init__()
-        layers = [nn.Linear(emb_dim, n_units), nn.ReLU(), nn.Linear(n_units, vocab_size), nn.Softmax()]
+        layers = [nn.Linear(emb_dim, n_units), nn.ReLU(), nn.Linear(n_units, vocab_size), nn.Softmax(dim=1)]
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -84,7 +84,7 @@ class Trainer:
         lst = []
         with torch.no_grad():
             for i in range(0, self.vocab_size_0, self.p_bs):
-                batch = torch.arange(i * self.p_bs, min((i + 1) * self.p_bs, self.vocab_size_0)).view(-1, 1).to(GPU)
+                batch = torch.arange(i, min(i + self.p_bs, self.vocab_size_0)).view(-1, 1).to(GPU)
                 x = self.skip_gram[0].u(batch).view(-1, self.emb_dim)
                 y = self.perm(x).topk(10, dim=1, largest=True, sorted=True)  # Long[p_bs, 10]
                 lst.append(y)
