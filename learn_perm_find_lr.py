@@ -86,7 +86,7 @@ class Trainer:
             for i in range(0, self.vocab_size_0, self.p_bs):
                 batch = torch.arange(i, min(i + self.p_bs, self.vocab_size_0)).view(-1, 1).to(GPU)
                 x = self.skip_gram[0].u(batch).view(-1, self.emb_dim)
-                y = self.perm(x).topk(10, dim=1, largest=True, sorted=True)  # Long[p_bs, 10]
+                y = self.perm(x).topk(10, dim=1, largest=True, sorted=True)[1]  # Long[p_bs, 10]
                 lst.append(y)
         return torch.cat(lst)  # Long[vocab_size, 10]
 
@@ -204,7 +204,7 @@ def main():
         for _ in trange(params.n_steps):
             p_loss += trainer.perm_step(fix_embedding=epoch >= params.epoch_tune_emb)
             c += 1
-            v_loss = v_loss * 0.999 + p_loss
+            v_loss = v_loss * 0.999 + 0.001 * p_loss
             v_norm = v_norm * 0.999 + 1.0
             if c >= out_freq:
                 vis.line(Y=torch.FloatTensor([p_loss / c]), X=torch.LongTensor([step]),
