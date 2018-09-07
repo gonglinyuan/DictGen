@@ -202,7 +202,7 @@ def main():
     v_loss, v_norm = 0.0, 0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            p_loss += trainer.perm_step(fix_embedding=epoch >= params.epoch_tune_emb)
+            p_loss += trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
             c += 1
             v_loss = v_loss * 0.999 + 0.001 * p_loss
             v_norm = v_norm * 0.999 + 1.0
