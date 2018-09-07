@@ -85,7 +85,7 @@ class Trainer:
             for i in range(0, self.vocab_size_0, self.p_bs):
                 batch = torch.arange(i * self.p_bs, min((i + 1) * self.p_bs, self.vocab_size_0)).view(-1, 1).to(GPU)
                 x = self.skip_gram[0].u(batch).view(-1, self.emb_dim)
-                y = self.perm(x).topk(dim=1, largest=True, sorted=True)  # Long[p_bs, 10]
+                y = self.perm(x).topk(10, dim=1, largest=True, sorted=True)  # Long[p_bs, 10]
                 lst.append(y)
         return torch.cat(lst)  # Long[vocab_size, 10]
 
