@@ -6,6 +6,7 @@ from datetime import datetime
 import fastText
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import visdom
 from tqdm import trange
 
@@ -20,20 +21,37 @@ CPU = torch.device("cpu")
 
 
 class Permutation(nn.Module):
-    def __init__(self, emb_dim, vocab_size, *, n_units):
+    def __init__(self, emb_dim, vocab_size, *, n_units, batch_norm):
         super(Permutation, self).__init__()
-        layers = [nn.Linear(emb_dim, n_units), nn.ReLU(), nn.Linear(n_units, vocab_size), nn.Softmax(dim=1)]
+        layers = []
+        if batch_norm:
+            layers.append(nn.BatchNorm1d(emb_dim))
+        layers.append(nn.Linear(emb_dim, n_units, bias=not batch_norm))
+        if batch_norm:
+            layers.append(nn.BatchNorm1d(n_units))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(n_units, vocab_size, bias=not batch_norm))
+        layers.append(nn.Softmax(dim=1))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.layers(x)
 
 
+class EntropyLoss(nn.Module):
+    def __init__(self):
+        super(EntropyLoss, self).__init__()
+
+    def forward(self, x):
+        return -torch.sum(F.softmax(x, dim=1) * F.log_softmax(x, dim=1), dim=1).mean()
+
+
 class Trainer:
     def __init__(self, corpus_data_0, corpus_data_1, *, params, n_samples=10000000):
         self.skip_gram = [SkipGram(corpus_data_0.vocab_size + 1, params.emb_dim).to(GPU),
                           SkipGram(corpus_data_1.vocab_size + 1, params.emb_dim).to(GPU)]
-        self.perm = Permutation(params.emb_dim, params.p_sample_top, n_units=params.p_n_units).to(GPU)
+        self.perm = Permutation(params.emb_dim, params.p_sample_top, n_units=params.p_n_units,
+                                batch_norm=params.p_bn).to(GPU)
         self.sampler = [
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
@@ -166,6 +184,7 @@ def main():
     parser.add_argument("--p_momentum", type=float, help="momentum of permutation learning")
     parser.add_argument("--p_wd", type=float, help="weight decay of permutation learning")
     parser.add_argument("--p_n_units", type=int, help="number of hidden units in permutation model")
+    parser.add_argument("--p_bn", action="store_true", help="turn on batch normalization or not")
     parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
     parser.add_argument("--p_sample_factor", type=float, help="sample factor of permutation learning")
     # parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")

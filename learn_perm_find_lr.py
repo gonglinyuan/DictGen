@@ -6,6 +6,7 @@ from datetime import datetime
 import fastText
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import visdom
 from tqdm import trange
 
@@ -20,20 +21,37 @@ CPU = torch.device("cpu")
 
 
 class Permutation(nn.Module):
-    def __init__(self, emb_dim, vocab_size, *, n_units):
+    def __init__(self, emb_dim, vocab_size, *, n_units, batch_norm):
         super(Permutation, self).__init__()
-        layers = [nn.Linear(emb_dim, n_units), nn.ReLU(), nn.Linear(n_units, vocab_size), nn.Softmax(dim=1)]
+        layers = []
+        if batch_norm:
+            layers.append(nn.BatchNorm1d(emb_dim))
+        layers.append(nn.Linear(emb_dim, n_units, bias=not batch_norm))
+        if batch_norm:
+            layers.append(nn.BatchNorm1d(n_units))
+        layers.append(nn.ReLU())
+        layers.append(nn.Linear(n_units, vocab_size, bias=not batch_norm))
+        layers.append(nn.Softmax(dim=1))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.layers(x)
 
 
+class EntropyLoss(nn.Module):
+    def __init__(self):
+        super(EntropyLoss, self).__init__()
+
+    def forward(self, x):
+        return -torch.sum(F.softmax(x, dim=1) * F.log_softmax(x, dim=1), dim=1).mean()
+
+
 class Trainer:
     def __init__(self, corpus_data_0, corpus_data_1, *, params, n_samples=10000000):
         self.skip_gram = [SkipGram(corpus_data_0.vocab_size + 1, params.emb_dim).to(GPU),
                           SkipGram(corpus_data_1.vocab_size + 1, params.emb_dim).to(GPU)]
-        self.perm = Permutation(params.emb_dim, params.p_sample_top, n_units=params.p_n_units).to(GPU)
+        self.perm = Permutation(params.emb_dim, params.p_sample_top, n_units=params.p_n_units,
+                                batch_norm=params.p_bn).to(GPU)
         self.sampler = [
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
@@ -57,6 +75,7 @@ class Trainer:
         else:
             x = [self.skip_gram[id].u(batch[id]).view(self.p_bs, -1) for id in [0, 1]]
         x[0] = self.perm(x[0])
+        entropy = EntropyLoss()(x[0]).item()
         if fix_embedding:
             x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top].detach())
         else:
@@ -65,7 +84,7 @@ class Trainer:
         loss = torch.mean((x[0] - x[1]) ** 2)
         loss.backward()
         self.perm_optimizer.step()
-        return loss.item()
+        return loss.item(), entropy
 
     # def valid_step(self):
     #     with torch.no_grad():
@@ -167,6 +186,7 @@ def main():
     parser.add_argument("--p_momentum", type=float, help="momentum of permutation learning")
     parser.add_argument("--p_wd", type=float, help="weight decay of permutation learning")
     parser.add_argument("--p_n_units", type=int, help="number of hidden units in permutation model")
+    parser.add_argument("--p_bn", action="store_true", help="turn on batch normalization or not")
     parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
     parser.add_argument("--p_sample_factor", type=float, help="sample factor of permutation learning")
     # parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")
@@ -197,18 +217,22 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 1000
-    step, valid_loss, valid_norm, train_loss, train_norm = 0, 0.0, 0, 0.0, 0
+    step, valid_loss, valid_norm, train_loss, train_norm, entropy_loss, entropy_norm = 0, 0.0, 0, 0.0, 0, 0.0, 0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            p_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
+            p_loss, e_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
             train_loss += p_loss
             train_norm += 1
+            entropy_loss += e_loss
+            entropy_norm += 1
             valid_loss = valid_loss * 0.999 + 0.001 * p_loss
             valid_norm = valid_norm * 0.999 + 0.001 * 1.0
             if train_norm >= out_freq:
                 vis.line(Y=torch.FloatTensor([train_loss / train_norm]), X=torch.LongTensor([step]),
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
-                train_norm, train_loss = 0, 0.0
+                vis.line(Y=torch.FloatTensor([entropy_loss / entropy_norm]), X=torch.LongTensor([step]),
+                         win="e_loss", env=params.out_path, opts={"title": "e_loss"}, update="append")
+                train_norm, train_loss, entropy_norm, entropy_loss = 0, 0.0, 0, 0.0
                 step += 1
         print(f"epoch {epoch} loss is {valid_loss / valid_norm}")
         trainer.scheduler_step(valid_loss)
