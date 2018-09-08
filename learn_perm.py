@@ -31,7 +31,6 @@ class Permutation(nn.Module):
             layers.append(nn.BatchNorm1d(n_units))
         layers.append(nn.ReLU())
         layers.append(nn.Linear(n_units, vocab_size, bias=not batch_norm))
-        layers.append(nn.Softmax(dim=1))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -57,44 +56,30 @@ class Trainer:
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
         self.p_sample_top = params.p_sample_top
-        # self.p_valid_top = params.p_valid_top
         self.emb_dim = params.emb_dim
         self.vocab_size_0, self.vocab_size_1 = corpus_data_0.vocab_size, corpus_data_1.vocab_size
         self.perm_optimizer, self.perm_scheduler = optimizers.get_sgd_adapt(self.perm.parameters(),
-                                                                            lr=params.p_lr, wd=params.p_wd,
+                                                                            lr=params.p_lr, mode="min", wd=params.p_wd,
                                                                             momentum=params.p_momentum)
+        self.entropy_loss = EntropyLoss()
 
     def perm_step(self, *, fix_embedding=False):
         self.perm_optimizer.zero_grad()
-        batch = [torch.LongTensor([self.sampler[id].sample() for _ in range(self.p_bs)]).view(self.p_bs, 1).to(GPU)
-                 for id in [0, 1]]
-        if fix_embedding:
-            with torch.no_grad():
-                x = [self.skip_gram[id].u(batch[id]).view(self.p_bs, -1) for id in [0, 1]]
-        else:
-            x = [self.skip_gram[id].u(batch[id]).view(self.p_bs, -1) for id in [0, 1]]
-        x[0] = self.perm(x[0])
-        if fix_embedding:
-            x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top].detach())
-        else:
-            x[0] = torch.mm(x[0], self.skip_gram[1].u.weight[:self.p_sample_top])
-        x = [torch.einsum("ik,jk->ij", (x[id], x[id])) for id in [0, 1]]
-        loss = torch.mean((x[0] - x[1]) ** 2)
+        batch = torch.LongTensor([self.sampler[0].sample() for _ in range(self.p_bs)]).view(self.p_bs, 1).to(GPU)
+        for id in [0, 1]:
+            for param in self.skip_gram[id].parameters():
+                param.requires_grad = not fix_embedding
+        x = self.skip_gram[0].u(batch).view(self.p_bs, -1)
+        p = self.perm(x)
+        e_loss = self.entropy_loss(p)
+        p = F.softmax(p, dim=1)
+        z = torch.mm(p, self.skip_gram[1].u.weight[:self.p_sample_top])
+        gx = torch.einsum("ik,jk->ij", (x, x))
+        gz = torch.einsum("ik,jk->ij", (z, z))
+        loss = torch.mean((gx - gz) ** 2)
         loss.backward()
         self.perm_optimizer.step()
-        return loss.item()
-
-    # def valid_step(self):
-    #     with torch.no_grad():
-    #         batch0 = torch.arange(self.p_valid_top).view(self.p_valid_top, 1).to(GPU)  # Long[p_valid_top, 1]
-    #         x0 = self.skip_gram[0].u(batch0).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
-    #         batch1 = self.perm(x0)  # Float[p_valid_top, p_sample_top]
-    #         batch1 = torch.argmax(batch1, dim=1).view(self.p_valid_top, 1)  # Long[p_valid_top, 1]
-    #         x1 = self.skip_gram[1].v(batch1).view(self.p_valid_top, -1)  # Float[p_valid_top, emb_dim]
-    #         x0 = torch.einsum("ik,jk->ij", (x0, x0))
-    #         x1 = torch.einsum("ik,jk->ij", (x1, x1))
-    #         loss = torch.mean((x0 - x1) ** 2)
-    #     return loss.item()
+        return loss.item(), e_loss.item()
 
     def output(self):
         lst = []
@@ -187,7 +172,6 @@ def main():
     parser.add_argument("--p_bn", action="store_true", help="turn on batch normalization or not")
     parser.add_argument("--p_sample_top", type=int, help="sample top n frequent words in permutation learning")
     parser.add_argument("--p_sample_factor", type=float, help="sample factor of permutation learning")
-    # parser.add_argument("--p_valid_top", type=int, help="sample top n frequent words in validation")
 
     params = parser.parse_args()
 
@@ -215,18 +199,21 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 1000
-    step, valid_loss, valid_norm, train_loss, train_norm = 0, 0.0, 0, 0.0, 0
+    step, valid_loss, valid_norm, train_loss, train_norm, train_loss_e = 0, 0.0, 0, 0.0, 0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            p_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
+            p_loss, e_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
             train_loss += p_loss
+            train_loss_e += e_loss
             train_norm += 1
             valid_loss = valid_loss * 0.999 + 0.001 * p_loss
             valid_norm = valid_norm * 0.999 + 0.001 * 1.0
             if train_norm >= out_freq:
                 vis.line(Y=torch.FloatTensor([train_loss / train_norm]), X=torch.LongTensor([step]),
                          win="p_loss", env=params.out_path, opts={"title": "p_loss"}, update="append")
-                train_norm, train_loss = 0, 0.0
+                vis.line(Y=torch.FloatTensor([train_loss_e / train_norm]), X=torch.LongTensor([step]),
+                         win="e_loss", env=params.out_path, opts={"title": "e_loss"}, update="append")
+                train_norm, train_loss, train_loss_e = 0, 0.0, 0.0
                 step += 1
         print(f"epoch {epoch} loss is {valid_loss / valid_norm}")
         trainer.scheduler_step(valid_loss)

@@ -52,19 +52,19 @@ class Trainer:
         self.sg_optimizer, self.sg_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(self.skip_gram[id].parameters(),
-                                                            lr=params.sg_lr)
+                                                            lr=params.sg_lr, mode="max")
             self.sg_optimizer.append(optimizer)
             self.sg_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(
                 [{"params": self.skip_gram[id].u.parameters()}, {"params": self.skip_gram[id].v.parameters()}],
-                lr=params.a_lr)
+                lr=params.a_lr, mode="max")
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
             self.d_optimizer, self.d_scheduler = optimizers.get_sgd_adapt(self.discriminator.parameters(),
-                                                                          lr=params.d_lr, wd=params.d_wd)
+                                                                          lr=params.d_lr, mode="max", wd=params.d_wd)
 
         elif params.d_optimizer == "RMSProp":
             self.d_optimizer, self.d_scheduler = optimizers.get_rmsprop_linear(self.discriminator.parameters(),
@@ -74,7 +74,7 @@ class Trainer:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         if params.m_optimizer == "SGD":
             self.m_optimizer, self.m_scheduler = optimizers.get_sgd_adapt(self.mapping.parameters(),
-                                                                          lr=params.m_lr, wd=params.m_wd)
+                                                                          lr=params.m_lr, mode="max", wd=params.m_wd)
         elif params.m_optimizer == "RMSProp":
             self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop_linear(self.mapping.parameters(),
                                                                                params.n_steps,
