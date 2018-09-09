@@ -323,7 +323,7 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
-    step, c, sg_loss, d_loss, a_loss = 0, 0, [0.0, 0.0], 0.0, 0.0
+    step, c, sg_loss, d_loss, a_loss, best_valid_metric = 0, 0, [0.0, 0.0], 0.0, 0.0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
             if epoch >= params.epoch_sg and c % params.interval_sg == 0:
@@ -347,12 +347,15 @@ def main():
         emb0, emb1 = trainer.skip_gram[0].u.weight.data.detach()[:-1], trainer.skip_gram[1].u.weight.data.detach()[:-1]
         with torch.no_grad():
             emb0 = trainer.mapping(emb0)
-        trainer.scheduler_step(dist_mean_cosine(emb0, emb1))
-        dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
-        emb0 = normalize_embeddings(emb0, params.normalize_post)
-        emb1 = normalize_embeddings(emb1, params.normalize_post)
-        torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
-        torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
+        valid_metric = dist_mean_cosine(emb0, emb1)
+        trainer.scheduler_step(valid_metric)
+        if valid_metric > best_valid_metric:
+            best_valid_metric = valid_metric
+            dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
+            emb0 = normalize_embeddings(emb0, params.normalize_post)
+            emb1 = normalize_embeddings(emb1, params.normalize_post)
+            torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
+            torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
     print(params)
 
 
