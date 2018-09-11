@@ -1,16 +1,14 @@
-import gc
+import collections
 
+import fastText
 import numpy as np
 import torch
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset
 from torch.utils.data.dataloader import _use_shared_memory
-import fastText
 
 from word_sampler import WordSampler
 
-__all__ = ["CorpusData", "concat_collate", "BlockRandomSampler"]
-
-BLOCK_SIZE = 1000000
+__all__ = ["CorpusData", "concat_collate"]
 
 
 def get_discard_table(dic, n_tokens, threshold):
@@ -44,7 +42,7 @@ class CorpusData(Dataset):
             doc = self.file.readline()
         doc = self.model.get_line(doc.strip())[0]
         doc = [self.model.get_word_id(w) for w in doc]
-        doc = [w for w in doc if w == -1 or np.random.rand() >= self.p_discard[w]]
+        doc = [w for w in doc if w != -1 and np.random.rand() >= self.p_discard[w]]
         c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
         for i in range(len(doc)):
             pos_u = self.dic[doc[i]][0]
@@ -74,31 +72,16 @@ def concat_collate(batch):
     result = []
     sz = None
     for samples in zip(*batch):
-        tmp = torch.cat(samples, 0)
-        sz = tmp.shape[0]
+        if isinstance(samples[0], torch.Tensor):
+            tmp = torch.cat(samples, 0)
+            sz = tmp.shape[0]
+        elif isinstance(samples[0], collections.Sequence):
+            tmp = sum(samples, [])
+        else:
+            raise Exception("Type not recognized.")
         result.append(tmp)
     perm = torch.randperm(sz)
     if _use_shared_memory:
         return [tmp[perm].share_memory_() for tmp in result]
     else:
         return [tmp[perm] for tmp in result]
-
-
-class BlockRandomSampler(Sampler):
-    def __init__(self, data_source):
-        super().__init__(data_source)
-        self.data_source = data_source
-
-    def __iter__(self):
-        n_blocks = (len(self.data_source) + BLOCK_SIZE - 1) // BLOCK_SIZE
-        lst = []
-        for blk_id in torch.randperm(n_blocks):
-            if blk_id == n_blocks - 1:
-                blk_sz = len(self.data_source) - (n_blocks - 1) * BLOCK_SIZE
-            else:
-                blk_sz = BLOCK_SIZE
-            lst += (torch.randperm(blk_sz) + blk_id * BLOCK_SIZE).tolist()
-        return iter(lst)
-
-    def __len__(self):
-        return len(self.data_source)

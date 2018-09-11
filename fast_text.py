@@ -22,11 +22,8 @@ class FastText(nn.Module):
         # neg_v: Int[bs, 5]
         bs = len(pos_u)
 
-        bag, offsets = [], []
-        for w in pos_u:
-            offsets.append(len(bag))
-            bag += self.model.get_subwords(w)[1]
-        emb_u = self.u(torch.LongTensor(bag), offsets)  # emb_u: Float[bs, d]
+        bag, offsets = self.get_bag(pos_u)
+        emb_u = self.u(bag, offsets)  # emb_u: Float[bs, d]
 
         v = torch.LongTensor(bs, 6)
         for i in range(bs):
@@ -43,3 +40,10 @@ class FastText(nn.Module):
         # pos_s: Float[bs, 1]
         # neg_s: Float[bs, 5]
         return -(F.logsigmoid(s[:, 0]).view(-1) + F.logsigmoid(-s[:, 1:]).sum(1)).mean()
+
+    def get_bag(self, s):
+        bag, offsets = [], []
+        for w in s:
+            offsets.append(len(bag))
+            bag += self.model.get_subwords(w)[1]
+        return torch.LongTensor(bag), torch.LongTensor(offsets)
