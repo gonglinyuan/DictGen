@@ -20,7 +20,7 @@ class FastText(nn.Module):
         # u: Int[bs]
         # v: IntGPU[bs, 6]
 
-        bag, offsets = self.model.get_bag(u, self.u.weight.device)
+        bag, offsets = self.model.get_bag(u.tolist(), self.u.weight.device)
         emb_u = self.u(bag, offsets)  # emb_u: Float[bs, d]
 
         emb_v = self.v(v)  # emb_v: Float[bs, 6, d]
