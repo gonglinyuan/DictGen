@@ -36,7 +36,6 @@ class FastText(nn.Module):
     def get_input_matrix(self, dic, n, bs):
         lst = []
         for i in range(0, n, bs):
-            s = [dic[j][0] for j in range(i, min(i + bs, n))]
-            bag, offsets = self.model.get_bag(s, self.u.weight.device)
+            bag, offsets = self.model.get_bag(list(range(i, min(i + bs, n))), self.u.weight.device)
             lst.append(self.u(bag, offsets))
         return torch.cat(lst, 0)
