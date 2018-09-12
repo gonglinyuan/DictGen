@@ -43,26 +43,25 @@ class CorpusData(Dataset):
         doc = self.model.get_line(doc.strip())[0]
         doc = [self.model.get_word_id(w) for w in doc]
         doc = [w for w in doc if w != -1 and np.random.rand() >= self.p_discard[w]]
-        c, pos_u_b, pos_v_b, neg_v_b = 0, [], [], []
+        c, u_b, v_b = 0, [], []
         for i in range(len(doc)):
-            pos_u = self.dic[doc[i]][0]
+            u = doc[i]
             ws = np.random.randint(1, self.max_ws + 1)
             for j in range(-ws, ws + 1):
                 if j != 0 and 0 <= i + j < len(doc):
-                    pos_v = doc[i + j]
-                    neg_v = torch.LongTensor(self.n_ns)
-                    for k in range(self.n_ns):
-                        neg_v[k] = int(self.negative_sampler.sample_neg(pos_v))
-                    pos_u_b.append(pos_u)
-                    pos_v_b.append(pos_v)
-                    neg_v_b.append(neg_v)
+                    v = torch.LongTensor(self.n_ns + 1)
+                    v[0] = doc[i + j]
+                    for k in range(1, self.n_ns + 1):
+                        v[k] = int(self.negative_sampler.sample_neg(doc[i + j]))
+                    u_b.append(u)
+                    v_b.append(v)
                     c += 1
-        pos_v_b = torch.LongTensor(pos_v_b).view(c, 1)
+        u_b = torch.LongTensor(u_b)
         if c > 0:
-            neg_v_b = torch.stack(neg_v_b).view(c, self.n_ns)
+            v_b = torch.stack(v_b).view(c, self.n_ns + 1)
         else:
-            neg_v_b = torch.LongTensor([]).view(c, self.n_ns)
-        return pos_u_b, pos_v_b, neg_v_b
+            v_b = torch.LongTensor([]).view(c, self.n_ns + 1)
+        return u_b, v_b  # u_b: Int[c] ; v_b: Int[c, 6]
 
     def __len__(self):
         return self.n_docs
@@ -72,13 +71,8 @@ def concat_collate(batch):
     result = []
     sz = None
     for samples in zip(*batch):
-        if isinstance(samples[0], torch.Tensor):
-            tmp = torch.cat(samples, 0)
-            sz = tmp.shape[0]
-        elif isinstance(samples[0], collections.Sequence):
-            tmp = sum(samples, [])
-        else:
-            raise Exception("Type not recognized.")
+        tmp = torch.cat(samples, 0)
+        sz = tmp.shape[0]
         result.append(tmp)
     perm = torch.randperm(sz)
     if _use_shared_memory:

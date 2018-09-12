@@ -2,7 +2,6 @@ import argparse
 import os
 from datetime import datetime
 
-import fastText
 import torch
 import torch.nn as nn
 import visdom
@@ -25,12 +24,11 @@ def _data_queue(corpus_data, *, n_threads, n_sentences, batch_size):
     data_loader = DataLoader(corpus_data, collate_fn=concat_collate, batch_size=n_sentences, num_workers=n_threads,
                              pin_memory=True, shuffle=False)
     while True:
-        for pos_u, pos_v, neg_v in data_loader:
-            for i in range(pos_u.shape[0] // batch_size):
-                pos_u_b = pos_u[i * batch_size: (i + 1) * batch_size]
-                pos_v_b = pos_v[i * batch_size: (i + 1) * batch_size].to(GPU)
-                neg_v_b = neg_v[i * batch_size: (i + 1) * batch_size].to(GPU)
-                yield pos_u_b, pos_v_b, neg_v_b
+        for u, v in data_loader:
+            for i in range(u.shape[0] // batch_size):
+                u_b = u[i * batch_size: (i + 1) * batch_size]
+                v_b = v[i * batch_size: (i + 1) * batch_size].to(GPU)
+                yield u_b, v_b
 
 
 def _orthogonalize(mapping, beta):
@@ -99,8 +97,8 @@ class Trainer:
         losses = []
         for id in [0, 1]:
             self.ft_optimizer[id].zero_grad()
-            pos_u_b, pos_v_b, neg_v_b = self.corpus_data_queue[id].__next__()
-            s = self.fast_text[id](pos_u_b, pos_v_b, neg_v_b)
+            u_b, v_b = self.corpus_data_queue[id].__next__()
+            s = self.fast_text[id](u_b, v_b)
             loss = FastText.loss_fn(s)
             loss.backward()
             self.ft_optimizer[id].step()
@@ -110,7 +108,7 @@ class Trainer:
     def get_adv_batch(self, *, reverse, fix_embedding=False):
         batch = [[self.dic_0[self.sampler[id].sample()][0] for _ in range(self.d_bs)]
                  for id in [0, 1]]
-        batch = [self.fast_text[id].get_bag(batch[id])
+        batch = [FastText.get_bag(self.fast_text[id].model, batch[id])
                  for id in [0, 1]]
         if fix_embedding:
             with torch.no_grad():

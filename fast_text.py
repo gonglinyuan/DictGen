@@ -16,20 +16,14 @@ class FastText(nn.Module):
         self.u.weight.data.copy_(data_u)
         self.v = nn.Embedding.from_pretrained(data_v, sparse=True)
 
-    def forward(self, pos_u, pos_v, neg_v):
-        # pos_u: String[bs]
-        # pos_v: Int[bs]
-        # neg_v: Int[bs, 5]
-        bs = len(pos_u)
+    def forward(self, u, v):
+        # u: Int[bs]
+        # v: IntGPU[bs, 6]
 
-        bag, offsets = self.get_bag(pos_u)
+        bag, offsets = FastText.get_bag(self.model, u)
+        bag, offsets = bag.to(self.u.weight.device), offsets.to(self.u.weight.device)
         emb_u = self.u(bag, offsets)  # emb_u: Float[bs, d]
 
-        v = torch.LongTensor(bs, 6)
-        for i in range(bs):
-            v[i, 0] = pos_v[i]
-            for j in range(5):
-                v[i, j + 1] = neg_v[i, j]
         emb_v = self.v(v)  # emb_v: Float[bs, 6, d]
 
         s = torch.einsum("ik,ijk->ij", (emb_u, emb_v))  # s: Float[bs, 6]
@@ -37,21 +31,22 @@ class FastText(nn.Module):
 
     @staticmethod
     def loss_fn(s):
-        # pos_s: Float[bs, 1]
-        # neg_s: Float[bs, 5]
+        # s: FloatGPU[bs, 6]
         return -(F.logsigmoid(s[:, 0]).view(-1) + F.logsigmoid(-s[:, 1:]).sum(1)).mean()
 
-    def get_bag(self, s):
+    @staticmethod
+    def get_bag(model, s):
         bag, offsets = [], []
         for w in s:
             offsets.append(len(bag))
-            bag += self.model.get_subwords(w)[1]
+            bag += model.get_subwords2(w)
         return torch.LongTensor(bag), torch.LongTensor(offsets)
 
     def get_input_matrix(self, dic, n, bs):
         lst = []
         for i in range(0, n, bs):
             s = [dic[j][0] for j in range(i, min(i + bs, n))]
-            bag, offsets = self.get_bag(s)
+            bag, offsets = FastText.get_bag(self.model, s)
+            bag, offsets = bag.to(self.u.weight.device), offsets.to(self.u.weight.device)
             lst.append(self.u(bag, offsets))
         return torch.cat(lst, 0)
