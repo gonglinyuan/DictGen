@@ -45,6 +45,23 @@ class EntropyLoss(nn.Module):
         return -torch.sum(F.softmax(x, dim=1) * F.log_softmax(x, dim=1), dim=1).mean()
 
 
+def correlation_distribution(x):
+    u, s, _ = torch.svd(x)
+    mx = torch.einsum("ik,k,jk->ij", (u, s, u))
+    mx, _ = torch.sort(mx, dim=1, descending=True)
+    return mx
+
+
+def csls_knn(x, z, k=10):
+    x /= x.norm(p=2, dim=1, keepdim=True).expand_as(x)
+    z /= z.norm(p=2, dim=1, keepdim=True).expand_as(z)
+    sim = torch.einsum("ik,jk->ij", (x, z))
+    sx = torch.topk(sim, k=k, dim=1, largest=True, sorted=False)[0].mean(dim=1, keepdim=True).expand_as(sim)
+    sz = torch.topk(sim, k=k, dim=0, largest=True, sorted=False)[0].mean(dim=0, keepdim=True).expand_as(sim)
+    sim = sim * 2 - sx - sz
+    return torch.argmax(sim, dim=1)
+
+
 class Trainer:
     def __init__(self, corpus_data_0, corpus_data_1, *, params, n_samples=10000000):
         self.skip_gram = [SkipGram(corpus_data_0.vocab_size + 1, params.emb_dim).to(GPU),
