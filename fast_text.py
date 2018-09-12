@@ -39,7 +39,7 @@ class FastText(nn.Module):
         bag, offsets = [], []
         for w in s:
             offsets.append(len(bag))
-            bag += model.get_subwords2(w)
+            bag += model.f.getSubwords2(w)
         return torch.LongTensor(bag), torch.LongTensor(offsets)
 
     def get_input_matrix(self, dic, n, bs):
