@@ -48,12 +48,12 @@ class Trainer:
         self.mapping = nn.Linear(params.emb_dim, params.emb_dim, bias=False)
         self.mapping.weight.data.copy_(torch.diag(torch.ones(params.emb_dim)))
         self.mapping = self.mapping.to(GPU)
-        self.sg_optimizer, self.sg_scheduler = [], []
+        self.ft_optimizer, self.ft_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(self.fast_text[id].parameters(),
-                                                            lr=params.sg_lr, mode="max")
-            self.sg_optimizer.append(optimizer)
-            self.sg_scheduler.append(scheduler)
+                                                            lr=params.ft_lr, mode="max")
+            self.ft_optimizer.append(optimizer)
+            self.ft_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(
@@ -85,9 +85,9 @@ class Trainer:
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
         self.corpus_data_queue = [
             _data_queue(corpus_data_0, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
-                        batch_size=params.sg_bs),
+                        batch_size=params.ft_bs),
             _data_queue(corpus_data_1, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
-                        batch_size=params.sg_bs)
+                        batch_size=params.ft_bs)
         ]
         self.sampler = [
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top),
@@ -95,15 +95,15 @@ class Trainer:
         self.d_bs = params.d_bs
         self.dic_0, self.dic_1 = corpus_data_0.dic, corpus_data_1.dic
 
-    def skip_gram_step(self):
+    def fast_text_step(self):
         losses = []
         for id in [0, 1]:
-            self.sg_optimizer[id].zero_grad()
+            self.ft_optimizer[id].zero_grad()
             pos_u_b, pos_v_b, neg_v_b = self.corpus_data_queue[id].__next__()
             s = self.fast_text[id](pos_u_b, pos_v_b, neg_v_b)
             loss = FastText.loss_fn(s)
             loss.backward()
-            self.sg_optimizer[id].step()
+            self.ft_optimizer[id].step()
             losses.append(loss.item())
         return losses[0], losses[1]
 
@@ -154,7 +154,7 @@ class Trainer:
 
     def scheduler_step(self, metric):
         for id in [0, 1]:
-            self.sg_scheduler[id].step(metric)
+            self.ft_scheduler[id].step(metric)
             self.a_scheduler[id].step(metric)
         # self.d_scheduler.step(metric)
         self.m_scheduler.step(metric)
@@ -241,12 +241,13 @@ def main():
     # Global settings
     parser.add_argument("--src_lang", type=str, help="language of embedding 0")
     parser.add_argument("--tgt_lang", type=str, help="language of embedding 1")
+    parser.add_argument("--vocab_size", type=int, help="size of output vocabulary")
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
     parser.add_argument("--epoch_adv", type=int, help="the epoch to start adversarial training for embeddings")
-    parser.add_argument("--epoch_sg", type=int, help="the epoch to start skip-gram training")
-    parser.add_argument("--interval_sg", type=int, help="the interval of training skip-gram")
+    parser.add_argument("--epoch_ft", type=int, help="the epoch to start skip-gram training")
+    parser.add_argument("--interval_ft", type=int, help="the interval of training skip-gram")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
     parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
 
@@ -254,9 +255,9 @@ def main():
     parser.add_argument("--max_ws", type=int, help="max window size")
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
     parser.add_argument("--n_threads", type=int, help="number of data loader threads")
-    parser.add_argument("--sg_bs", type=int, help="batch size")
+    parser.add_argument("--ft_bs", type=int, help="batch size")
     parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
-    parser.add_argument("--sg_lr", type=float, help="initial learning rate of skip-gram")
+    parser.add_argument("--ft_lr", type=float, help="initial learning rate of skip-gram")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
 
     # Discriminator settings
@@ -301,29 +302,30 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
-    step, c, sg_loss, d_loss, a_loss, best_valid_metric = 0, 0, [0.0, 0.0], 0.0, 0.0, 0.0
+    step, c, ft_loss, d_loss, a_loss, best_valid_metric = 0, 0, [0.0, 0.0], 0.0, 0.0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
-            if epoch >= params.epoch_sg and c % params.interval_sg == 0:
-                l0, l1 = trainer.skip_gram_step()
-                sg_loss[0] += l0
-                sg_loss[1] += l1
+            if epoch >= params.epoch_ft and c % params.interval_ft == 0:
+                l0, l1 = trainer.fast_text_step()
+                ft_loss[0] += l0
+                ft_loss[1] += l1
             d_loss += sum([trainer.discriminator_step() for _ in range(params.d_n_steps)]) / params.d_n_steps
             a_loss += trainer.adversarial_step(fix_embedding=epoch < params.epoch_adv)
             c += 1
             if c >= out_freq:
-                vis.line(Y=torch.FloatTensor([sg_loss[0] / c * params.interval_sg]), X=torch.LongTensor([step]),
-                         win="sg_loss_0", env=params.out_path, opts={"title": "sg_loss_0"}, update="append")
-                vis.line(Y=torch.FloatTensor([sg_loss[1] / c * params.interval_sg]), X=torch.LongTensor([step]),
-                         win="sg_loss_1", env=params.out_path, opts={"title": "sg_loss_1"}, update="append")
+                vis.line(Y=torch.FloatTensor([ft_loss[0] / c * params.interval_ft]), X=torch.LongTensor([step]),
+                         win="ft_loss_0", env=params.out_path, opts={"title": "ft_loss_0"}, update="append")
+                vis.line(Y=torch.FloatTensor([ft_loss[1] / c * params.interval_ft]), X=torch.LongTensor([step]),
+                         win="ft_loss_1", env=params.out_path, opts={"title": "ft_loss_1"}, update="append")
                 vis.line(Y=torch.FloatTensor([d_loss / c]), X=torch.LongTensor([step]),
                          win="d_loss", env=params.out_path, opts={"title": "d_loss"}, update="append")
                 vis.line(Y=torch.FloatTensor([a_loss / c]), X=torch.LongTensor([step]),
                          win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
-                c, sg_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
+                c, ft_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
                 step += 1
-        emb0, emb1 = trainer.fast_text[0].u.weight.data.detach()[:-1], trainer.fast_text[1].u.weight.data.detach()[:-1]
         with torch.no_grad():
+            emb0 = trainer.fast_text[0].get_input_matrix(trainer.dic_0, params.vocab_size, params.ft_bs)
+            emb1 = trainer.fast_text[1].get_input_matrix(trainer.dic_1, params.vocab_size, params.ft_bs)
             emb0 = trainer.mapping(emb0)
         valid_metric = dist_mean_cosine(emb0, emb1)
         trainer.scheduler_step(valid_metric)

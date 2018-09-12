@@ -47,3 +47,11 @@ class FastText(nn.Module):
             offsets.append(len(bag))
             bag += self.model.get_subwords(w)[1]
         return torch.LongTensor(bag), torch.LongTensor(offsets)
+
+    def get_input_matrix(self, dic, n, bs):
+        lst = []
+        for i in range(0, n, bs):
+            s = [dic[j][0] for j in range(i, min(i + bs, n))]
+            bag, offsets = self.get_bag(s)
+            lst.append(self.u(bag, offsets))
+        return torch.cat(lst, 0)
