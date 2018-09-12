@@ -20,8 +20,7 @@ class FastText(nn.Module):
         # u: Int[bs]
         # v: IntGPU[bs, 6]
 
-        bag, offsets = FastText.get_bag(self.model, u)
-        bag, offsets = bag.to(self.u.weight.device), offsets.to(self.u.weight.device)
+        bag, offsets = self.model.get_bag(u, self.u.weight.device)
         emb_u = self.u(bag, offsets)  # emb_u: Float[bs, d]
 
         emb_v = self.v(v)  # emb_v: Float[bs, 6, d]
@@ -34,19 +33,10 @@ class FastText(nn.Module):
         # s: FloatGPU[bs, 6]
         return -(F.logsigmoid(s[:, 0]).view(-1) + F.logsigmoid(-s[:, 1:]).sum(1)).mean()
 
-    @staticmethod
-    def get_bag(model, s):
-        bag, offsets = [], []
-        for w in s:
-            offsets.append(len(bag))
-            bag += model.f.getSubwords2(w)
-        return torch.LongTensor(bag), torch.LongTensor(offsets)
-
     def get_input_matrix(self, dic, n, bs):
         lst = []
         for i in range(0, n, bs):
             s = [dic[j][0] for j in range(i, min(i + bs, n))]
-            bag, offsets = FastText.get_bag(self.model, s)
-            bag, offsets = bag.to(self.u.weight.device), offsets.to(self.u.weight.device)
+            bag, offsets = self.model.get_bag(s, self.u.weight.device)
             lst.append(self.u(bag, offsets))
         return torch.cat(lst, 0)

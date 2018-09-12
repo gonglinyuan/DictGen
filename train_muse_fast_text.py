@@ -108,7 +108,7 @@ class Trainer:
     def get_adv_batch(self, *, reverse, fix_embedding=False):
         batch = [[self.sampler[id].sample() for _ in range(self.d_bs)]
                  for id in [0, 1]]
-        batch = [FastText.get_bag(self.fast_text[id].model, batch[id])
+        batch = [self.fast_text[id].model.get_bag(batch[id], self.fast_text[id].u.weight.device)
                  for id in [0, 1]]
         if fix_embedding:
             with torch.no_grad():
