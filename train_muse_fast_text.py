@@ -106,7 +106,7 @@ class Trainer:
         return losses[0], losses[1]
 
     def get_adv_batch(self, *, reverse, fix_embedding=False):
-        batch = [[self.dic_0[self.sampler[id].sample()][0] for _ in range(self.d_bs)]
+        batch = [[self.sampler[id].sample() for _ in range(self.d_bs)]
                  for id in [0, 1]]
         batch = [FastText.get_bag(self.fast_text[id].model, batch[id])
                  for id in [0, 1]]
