@@ -84,6 +84,9 @@ class Trainer:
         self.entropy_loss = EntropyLoss()
         self.init_target = None
         self.init_loss_fn = nn.CrossEntropyLoss(reduction="elementwise_mean")
+        self.i_sampler = [
+            WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.i_n_init),
+            WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.i_n_init)]
 
     def perm_init_target(self, n_init):
         with torch.no_grad():
@@ -93,7 +96,7 @@ class Trainer:
 
     def perm_init_step(self):
         self.perm_optimizer.zero_grad()
-        batch = torch.LongTensor([self.sampler[0].sample() for _ in range(self.i_bs)])
+        batch = torch.LongTensor([self.i_sampler[0].sample() for _ in range(self.i_bs)])
         for id in [0, 1]:
             for param in self.skip_gram[id].parameters():
                 param.requires_grad = False
