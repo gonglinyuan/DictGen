@@ -37,6 +37,28 @@ def _orthogonalize(mapping, beta):
         w.copy_((1 + beta) * w - beta * w.mm(w.transpose(0, 1).mm(w)))
 
 
+def _csls(x, z, k=10):
+    x /= x.norm(p=2, dim=1, keepdim=True).expand_as(x)
+    z /= z.norm(p=2, dim=1, keepdim=True).expand_as(z)
+    sim = torch.einsum("ik,jk->ij", (x, z))
+    sx = torch.topk(sim, k=k, dim=1, largest=True, sorted=False)[0].mean(dim=1, keepdim=True).expand_as(sim)
+    sz = torch.topk(sim, k=k, dim=0, largest=True, sorted=False)[0].mean(dim=0, keepdim=True).expand_as(sim)
+    return sim * 2 - sx - sz
+
+
+def _procrustes(x, z, p, *, p2=None, mode="S2T"):
+    if mode == "S2T":
+        m = torch.einsum("ki,kj->ij", (x, z[p]))
+    elif mode == "T2S":
+        m = torch.einsum("ki,kj->ij", (x[p], z))
+    elif mode == "both":
+        m = (torch.einsum("ki,kj->ij", (x, z[p])) + torch.einsum("ki,kj->ij", (x[p2], z))) * 0.5
+    else:
+        raise Exception(f"procruste mode {mode} does not exist")
+    u, _, vt = torch.svd(m)
+    return u @ vt
+
+
 class Trainer:
     def __init__(self, corpus_data_0, corpus_data_1, *, params, n_samples=10000000):
         self.fast_text = [FastText(corpus_data_0.model).to(GPU), FastText(corpus_data_1.model).to(GPU)]
@@ -92,6 +114,8 @@ class Trainer:
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top)]
         self.d_bs = params.d_bs
         self.dic_0, self.dic_1 = corpus_data_0.dic, corpus_data_1.dic
+        self.r_top = params.r_top
+        self.r_bs = params.r_top if params.r_bs == 0 else params.r_bs
 
     def fast_text_step(self):
         losses = []
@@ -156,6 +180,13 @@ class Trainer:
             self.a_scheduler[id].step(metric)
         # self.d_scheduler.step(metric)
         self.m_scheduler.step(metric)
+
+    def refinement(self):
+        with torch.no_grad():
+            x = self.fast_text[0].get_input_matrix(self.dic_0, self.r_top, self.r_bs)
+            z = self.fast_text[1].get_input_matrix(self.dic_1, self.r_top, self.r_bs)
+            sim = _csls(x, z)
+
 
 
 def normalize_embeddings(emb, types, mean=None):
@@ -282,6 +313,10 @@ def main():
     parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
     parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
 
+    # Refinement settings
+    parser.add_argument("--r_top", type=int, help="only sample top n words to refine")
+    parser.add_argument("--r_bs", type=int, default=0, help="batch size for refinement (0 for r_top)")
+
     params = parser.parse_args()
 
     print(params)
@@ -329,7 +364,8 @@ def main():
         trainer.scheduler_step(valid_metric)
         if valid_metric > best_valid_metric:
             best_valid_metric = valid_metric
-            dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
+            dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic,
+                                                                                      params.tgt_lang)
             emb0 = normalize_embeddings(emb0, params.normalize_post)
             emb1 = normalize_embeddings(emb1, params.normalize_post)
             torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
