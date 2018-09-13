@@ -54,9 +54,27 @@ def _procrustes(x, z, p, *, p2=None, mode="S2T"):
     elif mode == "both":
         m = (torch.einsum("ki,kj->ij", (x, z[p])) + torch.einsum("ki,kj->ij", (x[p2], z))) * 0.5
     else:
-        raise Exception(f"procruste mode {mode} does not exist")
+        raise Exception(f"procrustes mode {mode} does not exist")
     u, _, vt = torch.svd(m)
     return u @ vt
+
+
+def _refine(x, z, mode="S2T"):
+    with torch.no_grad():
+        sim = _csls(x, z)
+        if mode == "S2T":
+            p = sim.argmax(dim=1)
+            w = _procrustes(x, z, p, mode="S2T")
+        elif mode == "T2S":
+            p = sim.argmax(dim=0)
+            w = _procrustes(z, x, p, mode="T2S")
+        elif mode == "both":
+            p1 = sim.argmax(dim=1)
+            p2 = sim.argmax(dim=0)
+            w = _procrustes(x, z, p1, p2=p2, mode="both")
+        else:
+            raise Exception(f"procrustes mode {mode} does not exist")
+        return x @ w, z
 
 
 class Trainer:
@@ -180,13 +198,6 @@ class Trainer:
             self.a_scheduler[id].step(metric)
         # self.d_scheduler.step(metric)
         self.m_scheduler.step(metric)
-
-    def refinement(self):
-        with torch.no_grad():
-            x = self.fast_text[0].get_input_matrix(self.dic_0, self.r_top, self.r_bs)
-            z = self.fast_text[1].get_input_matrix(self.dic_1, self.r_top, self.r_bs)
-            sim = _csls(x, z)
-
 
 
 def normalize_embeddings(emb, types, mean=None):
@@ -316,6 +327,8 @@ def main():
     # Refinement settings
     parser.add_argument("--r_top", type=int, help="only sample top n words to refine")
     parser.add_argument("--r_bs", type=int, default=0, help="batch size for refinement (0 for r_top)")
+    parser.add_argument("--r_mode", type=str, default="S2T", help="mode for refinement (S2T, T2S, both)")
+    parser.add_argument("--r_n_steps", type=int, help="number of refinement steps")
 
     params = parser.parse_args()
 
@@ -336,6 +349,8 @@ def main():
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 500
     step, c, ft_loss, d_loss, a_loss, best_valid_metric = 0, 0, [0.0, 0.0], 0.0, 0.0, 0.0
+    best_x, best_z = None, None
+    dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic, params.tgt_lang)
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
             if epoch >= params.epoch_ft and c % params.interval_ft == 0:
@@ -364,12 +379,21 @@ def main():
         trainer.scheduler_step(valid_metric)
         if valid_metric > best_valid_metric:
             best_valid_metric = valid_metric
-            dic0, dic1 = convert_dic(corpus_data_0.dic, params.src_lang), convert_dic(corpus_data_1.dic,
-                                                                                      params.tgt_lang)
+            best_x, best_z = emb0, emb1
             emb0 = normalize_embeddings(emb0, params.normalize_post)
             emb1 = normalize_embeddings(emb1, params.normalize_post)
             torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
             torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
+    x, z = best_x, best_z
+    for i in trange(params.r_n_steps):
+        x, z = _refine(x, z, mode=params.r_mode)
+        valid_metric = dist_mean_cosine(x, z)
+        if valid_metric > best_valid_metric:
+            best_valid_metric = valid_metric
+            emb0 = normalize_embeddings(x, params.normalize_post)
+            emb1 = normalize_embeddings(z, params.normalize_post)
+            torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-refinement{i}.pth"))
+            torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-refinement{i}.pth"))
     print(params)
 
 
