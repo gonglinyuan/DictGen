@@ -72,6 +72,7 @@ class Trainer:
             WordSampler(corpus_data_0.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top),
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.p_sample_factor, top=params.p_sample_top)]
         self.p_bs = params.p_bs
+        self.i_bs = params.i_bs
         self.p_sample_top = params.p_sample_top
         self.emb_dim = params.emb_dim
         self.vocab_size_0, self.vocab_size_1 = corpus_data_0.vocab_size, corpus_data_1.vocab_size
@@ -92,11 +93,11 @@ class Trainer:
 
     def perm_init_step(self):
         self.perm_optimizer.zero_grad()
-        batch = torch.LongTensor([self.sampler[0].sample() for _ in range(self.p_bs)]).view(self.p_bs, 1).to(GPU)
+        batch = torch.LongTensor([self.sampler[0].sample() for _ in range(self.i_bs)])
         for id in [0, 1]:
             for param in self.skip_gram[id].parameters():
                 param.requires_grad = False
-        x = self.skip_gram[0].u(batch).view(self.p_bs, -1)
+        x = self.skip_gram[0].u(batch.view(self.i_bs, 1).to(GPU)).view(self.i_bs, -1)
         p = self.perm(x)  # p: Float[bs, n_init]
         loss = self.init_loss_fn(p, self.init_target[batch])
         loss.backward()
@@ -205,6 +206,7 @@ def main():
 
     # Permutation init settings
     parser.add_argument("--i_n_init", type=int, help="number of initializing words")
+    parser.add_argument("--i_bs", type=int, help="batch size of initializing")
 
     # Permutation learning settings
     parser.add_argument("--p_bs", type=int, help="batch size of permutation learning")
