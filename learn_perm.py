@@ -97,6 +97,7 @@ class Trainer:
     def perm_init_step(self):
         self.perm_optimizer.zero_grad()
         batch = torch.LongTensor([self.i_sampler[0].sample() for _ in range(self.i_bs)])
+        print(batch, self.init_target[batch])
         for id in [0, 1]:
             for param in self.skip_gram[id].parameters():
                 param.requires_grad = False
