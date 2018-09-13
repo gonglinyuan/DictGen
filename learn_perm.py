@@ -81,6 +81,27 @@ class Trainer:
                                                                             factor=params.p_lr_factor,
                                                                             patience=params.p_lr_patience)
         self.entropy_loss = EntropyLoss()
+        self.init_target = None
+        self.init_loss_fn = nn.CrossEntropyLoss(reduction="elementwise_mean")
+
+    def perm_init_target(self, n_init):
+        with torch.no_grad():
+            mx = correlation_distribution(self.skip_gram[0].u.weight.data.detach()[:n_init])
+            mz = correlation_distribution(self.skip_gram[1].u.weight.data.detach()[:n_init])
+            self.init_target = csls_knn(mx, mz)
+
+    def perm_init_step(self):
+        self.perm_optimizer.zero_grad()
+        batch = torch.LongTensor([self.sampler[0].sample() for _ in range(self.p_bs)]).view(self.p_bs, 1).to(GPU)
+        for id in [0, 1]:
+            for param in self.skip_gram[id].parameters():
+                param.requires_grad = False
+        x = self.skip_gram[0].u(batch).view(self.p_bs, -1)
+        p = self.perm(x)  # p: Float[bs, n_init]
+        loss = self.init_loss_fn(p, self.init_target[batch])
+        loss.backward()
+        self.perm_optimizer.step()
+        return loss.item()
 
     def perm_step(self, *, fix_embedding=False):
         self.perm_optimizer.zero_grad()
@@ -182,6 +203,9 @@ def main():
     parser.add_argument("--n_ns", type=int, help="number of negative samples")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
 
+    # Permutation init settings
+    parser.add_argument("--i_n_init", type=int, help="number of initializing words")
+
     # Permutation learning settings
     parser.add_argument("--p_bs", type=int, help="batch size of permutation learning")
     parser.add_argument("--p_lr", type=float, help="learning rate of permutation learning")
@@ -220,7 +244,18 @@ def main():
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
                         log_to_filename=os.path.join(out_path, "log.txt"), use_incoming_socket=False)
     out_freq = 1000
-    step, valid_loss, valid_norm, train_loss, train_norm, train_loss_e = 0, 0.0, 0, 0.0, 0, 0.0
+    trainer.perm_init_target(params.i_n_init)
+    step, train_loss, train_norm = 0, 0.0, 0
+    for _ in trange(params.n_steps):
+        p_loss = trainer.perm_init_step()
+        train_loss += p_loss
+        train_norm += 1
+        if train_norm >= out_freq:
+            vis.line(Y=torch.FloatTensor([train_loss / train_norm]), X=torch.LongTensor([step]),
+                     win="ip_loss", env=params.out_path, opts={"title": "ip_loss"}, update="append")
+            train_norm, train_loss = 0, 0.0
+            step += 1
+    valid_loss, valid_norm, train_loss, train_norm, train_loss_e = 0.0, 0, 0.0, 0, 0.0
     for epoch in trange(params.n_epochs):
         for _ in trange(params.n_steps):
             p_loss, e_loss = trainer.perm_step(fix_embedding=epoch < params.epoch_tune_emb)
