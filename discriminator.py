@@ -1,6 +1,19 @@
+import torch
 import torch.nn as nn
 
 __all__ = ["Discriminator"]
+
+
+def _clip_elementwise(module):
+    m = 1.0 / (module.weight.size(1) ** 0.5)
+    module.weight.data.clamp_(-m, m)
+
+
+def _clip_spectral(module):
+    with torch.no_grad():
+        u, s, vt = torch.svd(module.weight.data)
+        s.clamp_(0.0, 1.0)
+        module.weight.data.copy_(torch.einsum("ik,k,kj->ij", (u, s, vt)))
 
 
 class Discriminator(nn.Module):
@@ -28,3 +41,13 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         return self.layers(x).view(-1)
+
+    def clip_weights(self, mode="elementwise"):
+        for module in self.layers:
+            if isinstance(module, nn.Linear):
+                if mode == "elementwise":
+                    _clip_elementwise(module)
+                elif mode == "spectral":
+                    _clip_spectral(module)
+                else:
+                    raise Exception(f"clip mode {mode} not found")

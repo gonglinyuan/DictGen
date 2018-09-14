@@ -37,13 +37,26 @@ def _orthogonalize(mapping, beta):
         w.copy_((1 + beta) * w - beta * w.mm(w.transpose(0, 1).mm(w)))
 
 
-def _csls(x, z, k=10):
-    x /= x.norm(p=2, dim=1, keepdim=True).expand_as(x)
-    z /= z.norm(p=2, dim=1, keepdim=True).expand_as(z)
-    sim = torch.einsum("ik,jk->ij", (x, z))
-    sx = torch.topk(sim, k=k, dim=1, largest=True, sorted=False)[0].mean(dim=1, keepdim=True).expand_as(sim)
-    sz = torch.topk(sim, k=k, dim=0, largest=True, sorted=False)[0].mean(dim=0, keepdim=True).expand_as(sim)
-    return sim * 2 - sx - sz
+def _csls_nn(x, z, *, bs, k=10):
+    x = x / x.norm(p=2, dim=1, keepdim=True).expand_as(x)
+    z = z / z.norm(p=2, dim=1, keepdim=True).expand_as(z)
+    n = x.shape[0]
+    sz = torch.FloatTensor(1, n)
+    p = torch.LongTensor(n)
+    for i in range(0, n, bs):
+        sim = torch.einsum("ik,jk->ij", (x, z[i:min(i + bs, n), :]))
+        sz[:, i:min(i + bs, n)] = torch.topk(sim, k=k, dim=0, largest=True, sorted=False)[0].mean(dim=0, keepdim=True)
+    for i in range(0, n, bs):
+        sim = torch.einsum("ik,jk->ij", (x[i:min(i + bs, n), :], z))  # Float[bs, n]
+        sx = torch.topk(sim, k=k, dim=1, largest=True, sorted=False)[0].mean(dim=1, keepdim=True)  # Float[bs, 1]
+        csls = sim * 2 - sx.expand_as(sim) - sz.expand_as(sim)
+        p[i:min(i + bs, n)] = torch.argmax(csls, dim=1)
+    return p
+
+
+def _orthogonal_project(m):
+    u, _, vt = torch.svd(m)
+    return u @ vt
 
 
 def _procrustes(x, z, p, *, p2=None, mode="S2T"):
@@ -59,19 +72,18 @@ def _procrustes(x, z, p, *, p2=None, mode="S2T"):
     return u @ vt
 
 
-def _refine(x, z, top, mode="S2T"):
+def _refine(x, z, top, bs, mode="S2T"):
     with torch.no_grad():
         xx, zz = x[:top], z[:top]
-        sim = _csls(xx, zz)
         if mode == "S2T":
-            p = sim.argmax(dim=1)
+            p = _csls_nn(x, z, bs=bs)
             w = _procrustes(xx, zz, p, mode="S2T")
         elif mode == "T2S":
-            p = sim.argmax(dim=0)
+            p = _csls_nn(z, x, bs=bs)
             w = _procrustes(xx, zz, p, mode="T2S")
         elif mode == "both":
-            p1 = sim.argmax(dim=1)
-            p2 = sim.argmax(dim=0)
+            p1 = _csls_nn(x, z, bs=bs)
+            p2 = _csls_nn(z, x, bs=bs)
             w = _procrustes(xx, zz, p1, p2=p2, mode="both")
         else:
             raise Exception(f"procrustes mode {mode} does not exist")
