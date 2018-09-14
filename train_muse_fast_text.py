@@ -380,8 +380,8 @@ def main():
                 c, ft_loss, d_loss, a_loss = 0, [0.0, 0.0], 0.0, 0.0
                 step += 1
         with torch.no_grad():
-            emb0 = trainer.fast_text[0].get_input_matrix(trainer.dic_0, params.vocab_size, params.ft_bs)
-            emb1 = trainer.fast_text[1].get_input_matrix(trainer.dic_1, params.vocab_size, params.ft_bs)
+            emb0 = trainer.fast_text[0].get_input_matrix(params.vocab_size, params.ft_bs)
+            emb1 = trainer.fast_text[1].get_input_matrix(params.vocab_size, params.ft_bs)
             emb0 = trainer.mapping(emb0)
         valid_metric = dist_mean_cosine(emb0, emb1)
         trainer.scheduler_step(valid_metric)
