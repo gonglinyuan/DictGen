@@ -59,19 +59,20 @@ def _procrustes(x, z, p, *, p2=None, mode="S2T"):
     return u @ vt
 
 
-def _refine(x, z, mode="S2T"):
+def _refine(x, z, top, mode="S2T"):
     with torch.no_grad():
-        sim = _csls(x, z)
+        xx, zz = x[:top], z[:top]
+        sim = _csls(xx, zz)
         if mode == "S2T":
             p = sim.argmax(dim=1)
-            w = _procrustes(x, z, p, mode="S2T")
+            w = _procrustes(xx, zz, p, mode="S2T")
         elif mode == "T2S":
             p = sim.argmax(dim=0)
-            w = _procrustes(z, x, p, mode="T2S")
+            w = _procrustes(xx, zz, p, mode="T2S")
         elif mode == "both":
             p1 = sim.argmax(dim=1)
             p2 = sim.argmax(dim=0)
-            w = _procrustes(x, z, p1, p2=p2, mode="both")
+            w = _procrustes(xx, zz, p1, p2=p2, mode="both")
         else:
             raise Exception(f"procrustes mode {mode} does not exist")
         return x @ w, z
@@ -132,8 +133,6 @@ class Trainer:
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top)]
         self.d_bs = params.d_bs
         self.dic_0, self.dic_1 = corpus_data_0.dic, corpus_data_1.dic
-        self.r_top = params.r_top
-        self.r_bs = params.r_top if params.r_bs == 0 else params.r_bs
 
     def fast_text_step(self):
         losses = []
@@ -326,7 +325,7 @@ def main():
 
     # Refinement settings
     parser.add_argument("--r_top", type=int, help="only sample top n words to refine")
-    parser.add_argument("--r_bs", type=int, default=0, help="batch size for refinement (0 for r_top)")
+    # parser.add_argument("--r_bs", type=int, default=0, help="batch size for refinement (0 for r_top)")
     parser.add_argument("--r_mode", type=str, default="S2T", help="mode for refinement (S2T, T2S, both)")
     parser.add_argument("--r_n_steps", type=int, help="number of refinement steps")
 
@@ -386,7 +385,7 @@ def main():
             torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
     x, z = best_x, best_z
     for i in trange(params.r_n_steps):
-        x, z = _refine(x, z, mode=params.r_mode)
+        x, z = _refine(x, z, top=params.r_top, mode=params.r_mode)
         valid_metric = dist_mean_cosine(x, z)
         if valid_metric > best_valid_metric:
             best_valid_metric = valid_metric
