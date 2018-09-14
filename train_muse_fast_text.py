@@ -291,6 +291,8 @@ def main():
     parser.add_argument("--epoch_ft", type=int, help="the epoch to start skip-gram training")
     parser.add_argument("--interval_ft", type=int, help="the interval of training skip-gram")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
+    parser.add_argument("--normalize_mid", type=str, default="",
+                        help="how to normalize the embedding before refinement")
     parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
 
     # Skip-gram settings
@@ -392,7 +394,8 @@ def main():
             emb1 = normalize_embeddings(emb1, params.normalize_post)
             torch.save({"dico": dic0, "vectors": emb0}, os.path.join(out_path, f"{params.src_lang}-epoch{epoch}.pth"))
             torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
-    x, z = best_x, best_z
+    x = normalize_embeddings(best_x, params.normalize_mid)
+    z = normalize_embeddings(best_z, params.normalize_mid)
     for i in trange(params.r_n_steps):
         x, z = _refine(x, z, top=params.r_top, mode=params.r_mode)
         valid_metric = dist_mean_cosine(x, z)
