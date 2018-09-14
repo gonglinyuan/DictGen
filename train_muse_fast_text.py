@@ -59,32 +59,30 @@ def _orthogonal_project(m):
     return u @ vt
 
 
-def _procrustes(x, z, p, *, p2=None, mode="S2T"):
-    if mode == "S2T":
-        m = torch.einsum("ki,kj->ij", (x, z[p]))
-    elif mode == "T2S":
-        m = torch.einsum("ki,kj->ij", (x[p], z))
-    elif mode == "both":
-        m = (torch.einsum("ki,kj->ij", (x, z[p])) + torch.einsum("ki,kj->ij", (x[p2], z))) * 0.5
-    else:
-        raise Exception(f"procrustes mode {mode} does not exist")
-    u, _, vt = torch.svd(m)
-    return u @ vt
-
-
 def _refine(x, z, top, bs, mode="S2T"):
     with torch.no_grad():
-        xx, zz = x[:top], z[:top]
         if mode == "S2T":
-            p = _csls_nn(x, z, bs=bs)
-            w = _procrustes(xx, zz, p, mode="S2T")
+            p = _csls_nn(x, z, bs=bs)  # Long[n]
+            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
+            m = torch.einsum("ki,kj->ij", (x[p[:, 0]], z[p[:, 1]]))
+            w = _orthogonal_project(m)
         elif mode == "T2S":
-            p = _csls_nn(z, x, bs=bs)
-            w = _procrustes(xx, zz, p, mode="T2S")
+            p = _csls_nn(z, x, bs=bs)  # Long[n]
+            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
+            m = torch.einsum("ki,kj->ij", (x[p[:, 1]], z[p[:, 0]]))
+            w = _orthogonal_project(m)
         elif mode == "both":
-            p1 = _csls_nn(x, z, bs=bs)
-            p2 = _csls_nn(z, x, bs=bs)
-            w = _procrustes(xx, zz, p1, p2=p2, mode="both")
+            p = _csls_nn(x, z, bs=bs)  # Long[n]
+            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
+            m1 = torch.einsum("ki,kj->ij", (x[p[:, 0]], z[p[:, 1]]))
+            p = _csls_nn(z, x, bs=bs)  # Long[n]
+            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
+            m2 = torch.einsum("ki,kj->ij", (x[p[:, 1]], z[p[:, 0]]))
+            w = _orthogonal_project((m1 + m2) * 0.5)
         else:
             raise Exception(f"procrustes mode {mode} does not exist")
         return x @ w, z
@@ -348,7 +346,7 @@ def main():
 
     # Refinement settings
     parser.add_argument("--r_top", type=int, help="only sample top n words to refine")
-    # parser.add_argument("--r_bs", type=int, default=0, help="batch size for refinement (0 for r_top)")
+    parser.add_argument("--r_bs", type=int, help="batch size for refinement")
     parser.add_argument("--r_mode", type=str, default="S2T", help="mode for refinement (S2T, T2S, both)")
     parser.add_argument("--r_n_steps", type=int, help="number of refinement steps")
 
@@ -409,7 +407,7 @@ def main():
     x = normalize_embeddings(best_x, params.normalize_mid)
     z = normalize_embeddings(best_z, params.normalize_mid)
     for i in trange(params.r_n_steps):
-        x, z = _refine(x, z, top=params.r_top, mode=params.r_mode)
+        x, z = _refine(x, z, top=params.r_top, bs=params.r_bs, mode=params.r_mode)
         valid_metric = dist_mean_cosine(x, z)
         if valid_metric > best_valid_metric:
             best_valid_metric = valid_metric
