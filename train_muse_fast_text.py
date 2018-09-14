@@ -90,14 +90,15 @@ class Trainer:
         self.ft_optimizer, self.ft_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(self.fast_text[id].parameters(),
-                                                            lr=params.ft_lr, mode="max")
+                                                            lr=params.ft_lr, mode="max", factor=params.ft_lr_decay,
+                                                            patience=params.ft_lr_patience)
             self.ft_optimizer.append(optimizer)
             self.ft_scheduler.append(scheduler)
         self.a_optimizer, self.a_scheduler = [], []
         for id in [0, 1]:
             optimizer, scheduler = optimizers.get_sgd_adapt(
                 [{"params": self.fast_text[id].u.parameters()}, {"params": self.fast_text[id].v.parameters()}],
-                lr=params.a_lr, mode="max")
+                lr=params.a_lr, mode="max", factor=params.a_lr_decay, patience=params.a_lr_patience)
             self.a_optimizer.append(optimizer)
             self.a_scheduler.append(scheduler)
         if params.d_optimizer == "SGD":
@@ -112,7 +113,9 @@ class Trainer:
             raise Exception(f"Optimizer {params.d_optimizer} not found.")
         if params.m_optimizer == "SGD":
             self.m_optimizer, self.m_scheduler = optimizers.get_sgd_adapt(self.mapping.parameters(),
-                                                                          lr=params.m_lr, mode="max", wd=params.m_wd)
+                                                                          lr=params.m_lr, mode="max", wd=params.m_wd,
+                                                                          factor=params.m_lr_decay,
+                                                                          patience=params.m_lr_patience)
         elif params.m_optimizer == "RMSProp":
             self.m_optimizer, self.m_scheduler = optimizers.get_rmsprop_linear(self.mapping.parameters(),
                                                                                params.n_steps,
@@ -297,6 +300,8 @@ def main():
     parser.add_argument("--ft_bs", type=int, help="batch size")
     parser.add_argument("--n_sentences", type=int, help="number of sentences to load each time")
     parser.add_argument("--ft_lr", type=float, help="initial learning rate of skip-gram")
+    parser.add_argument("--ft_lr_decay", type=float, help="learning rate decay factor")
+    parser.add_argument("--ft_lr_patience", type=float, help="learning rate decay patience")
     parser.add_argument("--threshold", type=float, default=1e-4, help="sampling threshold")
 
     # Discriminator settings
@@ -315,11 +320,15 @@ def main():
     # Mapping settings
     parser.add_argument("--m_optimizer", type=str, help="optimizer for the mapping")
     parser.add_argument("--m_lr", type=float, help="max learning rate for the mapping")
+    parser.add_argument("--m_lr_decay", type=float, help="learning rate decay factor")
+    parser.add_argument("--m_lr_patience", type=float, help="learning rate decay patience")
     parser.add_argument("--m_wd", type=float, help="weight decay for the mapping")
     parser.add_argument("--m_beta", type=float, help="beta to orthogonalize the mapping")
 
     # Adversarial training settings
     parser.add_argument("--a_lr", type=float, help="max learning rate of adversarial training for embeddings")
+    parser.add_argument("--a_lr_decay", type=float, help="learning rate decay factor")
+    parser.add_argument("--a_lr_patience", type=float, help="learning rate decay patience")
     parser.add_argument("--a_sample_top", type=int, default=0, help="only sample top n words in adversarial training")
     parser.add_argument("--a_sample_factor", type=float, help="sample factor in adversarial training")
 
