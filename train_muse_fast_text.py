@@ -42,8 +42,8 @@ def _csls_nn(x, z, *, bs, k=10):
     x = x / x.norm(p=2, dim=1, keepdim=True).expand_as(x)
     z = z / z.norm(p=2, dim=1, keepdim=True).expand_as(z)
     n = x.shape[0]
-    sz = torch.FloatTensor(1, n)
-    p = torch.LongTensor(n)
+    sz = torch.FloatTensor(1, n).to(GPU)
+    p = torch.LongTensor(n).to(GPU)
     for i in range(0, n, bs):
         sim = torch.einsum("ik,jk->ij", (x, z[i:min(i + bs, n), :]))
         sz[:, i:min(i + bs, n)] = torch.topk(sim, k=k, dim=0, largest=True, sorted=False)[0].mean(dim=0, keepdim=True)
