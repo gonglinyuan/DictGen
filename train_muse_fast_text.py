@@ -68,23 +68,23 @@ def _refine(x, z, top, bs, mode="S2T"):
     with torch.no_grad():
         if mode == "S2T":
             p = _csls_nn(x, z, bs=bs)  # Long[n]
-            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = torch.stack((torch.arange(x.shape[0], device=GPU), p), dim=1)  # Long[n, 2]
             p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
             m = torch.einsum("ki,kj->ij", (x[p[:, 0]], z[p[:, 1]]))
             w = _orthogonal_project(m)
         elif mode == "T2S":
             p = _csls_nn(z, x, bs=bs)  # Long[n]
-            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = torch.stack((torch.arange(x.shape[0], device=GPU), p), dim=1)  # Long[n, 2]
             p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
             m = torch.einsum("ki,kj->ij", (x[p[:, 1]], z[p[:, 0]]))
             w = _orthogonal_project(m)
         elif mode == "both":
             p = _csls_nn(x, z, bs=bs)  # Long[n]
-            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = torch.stack((torch.arange(x.shape[0], device=GPU), p), dim=1)  # Long[n, 2]
             p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
             m1 = torch.einsum("ki,kj->ij", (x[p[:, 0]], z[p[:, 1]]))
             p = _csls_nn(z, x, bs=bs)  # Long[n]
-            p = torch.stack((torch.arange(x.shape[0]), p), dim=1)  # Long[n, 2]
+            p = torch.stack((torch.arange(x.shape[0], device=GPU), p), dim=1)  # Long[n, 2]
             p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
             m2 = torch.einsum("ki,kj->ij", (x[p[:, 1]], z[p[:, 0]]))
             w = _orthogonal_project((m1 + m2) * 0.5)
