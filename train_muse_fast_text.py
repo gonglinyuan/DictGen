@@ -59,6 +59,10 @@ def _orthogonal_project(m):
     return u @ vt
 
 
+def _wasserstein_distance(y_hat, y):
+    return torch.mean(y_hat * (y * 2 - 1))
+
+
 def _refine(x, z, top, bs, mode="S2T"):
     with torch.no_grad():
         if mode == "S2T":
@@ -134,7 +138,12 @@ class Trainer:
             raise Exception(f"Optimizer {params.m_optimizer} not found")
         self.m_beta = params.m_beta
         self.smooth = params.smooth
-        self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
+        self.wgan = params.wgan
+        if params.wgan:
+            self.loss_fn = _wasserstein_distance
+            self.wgan_clip_mode = params.wgan_clip_mode
+        else:
+            self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
         self.corpus_data_queue = [
             _data_queue(corpus_data_0, n_threads=(params.n_threads + 1) // 2, n_sentences=params.n_sentences,
                         batch_size=params.ft_bs),
@@ -202,6 +211,8 @@ class Trainer:
         loss = self.loss_fn(y_hat, y)
         loss.backward()
         self.d_optimizer.step()
+        if self.wgan:
+            self.discriminator.clip_weights(self.wgan_clip_mode)
         return loss.item()
 
     def scheduler_step(self, metric):
@@ -328,6 +339,10 @@ def main():
     parser.add_argument("--d_bn", action="store_true", help="turn on batch normalization for the discriminator or not")
     parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
     parser.add_argument("--d_n_steps", type=int, help="number of discriminator steps per interation")
+
+    # WGAN settings
+    parser.add_argument("--wgan", action="store_true", help="use WGAN or ordinary GAN")
+    parser.add_argument("--wgan_clip_mode", type=str, help="how to clip weights")
 
     # Mapping settings
     parser.add_argument("--m_optimizer", type=str, help="optimizer for the mapping")
