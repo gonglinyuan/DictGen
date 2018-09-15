@@ -4,6 +4,7 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+import torch.autograd as autograd
 import visdom
 from torch.utils.data import DataLoader
 from tqdm import trange
@@ -139,9 +140,9 @@ class Trainer:
         self.m_beta = params.m_beta
         self.smooth = params.smooth
         self.wgan = params.wgan
+        self.d_clip_mode = params.d_clip_mode
         if params.wgan:
             self.loss_fn = _wasserstein_distance
-            self.wgan_clip_mode = params.wgan_clip_mode
         else:
             self.loss_fn = nn.BCEWithLogitsLoss(reduction="elementwise_mean")
         self.corpus_data_queue = [
@@ -155,6 +156,7 @@ class Trainer:
             WordSampler(corpus_data_1.dic, n_urns=n_samples, alpha=params.a_sample_factor, top=params.a_sample_top)]
         self.d_bs = params.d_bs
         self.dic_0, self.dic_1 = corpus_data_0.dic, corpus_data_1.dic
+        self.d_gp = params.d_gp
 
     def fast_text_step(self):
         losses = []
@@ -168,7 +170,7 @@ class Trainer:
             losses.append(loss.item())
         return losses[0], losses[1]
 
-    def get_adv_batch(self, *, reverse, fix_embedding=False):
+    def get_adv_batch(self, *, reverse, fix_embedding=False, gp=False):
         batch = [[self.sampler[id].sample() for _ in range(self.d_bs)]
                  for id in [0, 1]]
         batch = [self.fast_text[id].model.get_bag(batch[id], self.fast_text[id].u.weight.device)
@@ -178,14 +180,20 @@ class Trainer:
                 x = [self.fast_text[id].u(batch[id][0], batch[id][1]).view(self.d_bs, -1) for id in [0, 1]]
         else:
             x = [self.fast_text[id].u(batch[id][0], batch[id][1]).view(self.d_bs, -1) for id in [0, 1]]
-        x[0] = self.mapping(x[0])
-        x = torch.cat(x, 0)
         y = torch.FloatTensor(self.d_bs * 2).to(GPU).uniform_(0.0, self.smooth)
         if reverse:
             y[: self.d_bs] = 1 - y[: self.d_bs]
         else:
             y[self.d_bs:] = 1 - y[self.d_bs:]
-        return x, y
+        x[0] = self.mapping(x[0])
+        if gp:
+            t = torch.FloatTensor(self.d_bs).to(GPU).uniform_(0.0, 1.0)
+            z = x[0] * t + x[1] * (1.0 - t)
+            x = torch.cat(x, 0)
+            return x, y, z
+        else:
+            x = torch.cat(x, 0)
+            return x, y
 
     def adversarial_step(self, fix_embedding=False):
         for id in [0, 1]:
@@ -206,13 +214,20 @@ class Trainer:
         self.d_optimizer.zero_grad()
         self.discriminator.train()
         with torch.no_grad():
-            x, y = self.get_adv_batch(reverse=False)
+            if self.d_gp > 0:
+                x, y, z = self.get_adv_batch(reverse=False, gp=True)
+            else:
+                x, y = self.get_adv_batch(reverse=False)
+                z = None
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
+        if self.d_gp > 0:
+            g = autograd.grad(self.discriminator(z), z, retain_graph=True, create_graph=True, only_inputs=True)
+            loss += self.d_gp * torch.mean((g - 1.0) ** 2)
         loss.backward()
         self.d_optimizer.step()
         if self.wgan:
-            self.discriminator.clip_weights(self.wgan_clip_mode)
+            self.discriminator.clip_weights(self.d_clip_mode)
         return loss.item()
 
     def scheduler_step(self, metric):
@@ -339,10 +354,11 @@ def main():
     parser.add_argument("--d_bn", action="store_true", help="turn on batch normalization for the discriminator or not")
     parser.add_argument("--d_optimizer", type=str, help="optimizer for the discriminator")
     parser.add_argument("--d_n_steps", type=int, help="number of discriminator steps per interation")
+    parser.add_argument("--d_clip_mode", type=str, default="none", help="how to clip weights")
+    parser.add_argument("--d_gp", type=float, default=-1, help="the gradient penalty factor (-1 to disable)")
 
     # WGAN settings
     parser.add_argument("--wgan", action="store_true", help="use WGAN or ordinary GAN")
-    parser.add_argument("--wgan_clip_mode", type=str, help="how to clip weights")
 
     # Mapping settings
     parser.add_argument("--m_optimizer", type=str, help="optimizer for the mapping")

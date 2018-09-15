@@ -49,5 +49,7 @@ class Discriminator(nn.Module):
                     _clip_elementwise(module)
                 elif mode == "spectral":
                     _clip_spectral(module)
+                elif mode == "none":
+                    pass
                 else:
                     raise Exception(f"clip mode {mode} not found")
