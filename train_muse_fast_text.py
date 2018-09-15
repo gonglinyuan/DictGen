@@ -70,6 +70,7 @@ def _refine(x, z, top, bs, mode="S2T"):
             p = _csls_nn(x, z, bs=bs)  # Long[n]
             p = torch.stack((torch.arange(x.shape[0], device=GPU), p), dim=1)  # Long[n, 2]
             p = p.masked_select((p.max(dim=1, keepdim=True)[0] <= top).expand_as(p)).view(-1, 2)  # Long[?, 2]
+            print(p)
             m = torch.einsum("ki,kj->ij", (x[p[:, 0]], z[p[:, 1]]))
             w = _orthogonal_project(m)
         elif mode == "T2S":
@@ -437,6 +438,7 @@ def main():
             torch.save({"dico": dic1, "vectors": emb1}, os.path.join(out_path, f"{params.tgt_lang}-epoch{epoch}.pth"))
     x = normalize_embeddings(best_x, params.normalize_mid)
     z = normalize_embeddings(best_z, params.normalize_mid)
+    torch.save([x, z], os.path.join("tmp.pth"))
     for i in trange(params.r_n_steps):
         x, z = _refine(x, z, top=params.r_top, bs=params.r_bs, mode=params.r_mode)
         valid_metric = dist_mean_cosine(x, z)
