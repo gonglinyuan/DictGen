@@ -14,7 +14,7 @@ def _clip_elementwise(module):
 
 
 def _clip_spectral(module):
-    u, s, vt = scipy.linalg.svd(np.array(module.weight.data, dtype=np.float64))
+    u, s, vt = scipy.linalg.svd(np.array(module.weight.data, dtype=np.float64), full_matrices=False)
     w = np.einsum("ik,k,kj->ij", u, s.clip(0.0, 1.0), vt)
     module.weight.data.copy_(torch.from_numpy(w).to(torch.float).to(GPU))
 
