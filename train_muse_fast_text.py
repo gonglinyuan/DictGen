@@ -66,6 +66,18 @@ def _wasserstein_distance(y_hat, y):
     return torch.mean(y_hat * (y * 2 - 1))
 
 
+def _spectral_alignment(x, z):
+    x, z = np.array(x, dtype=np.float64), np.array(z, dtype=np.float64)
+    u1, s1, v1t = scipy.linalg.svd(x, full_matrices=False)
+    u2, s2, v2t = scipy.linalg.svd(z, full_matrices=False)
+    s = (s1 + s2) * 0.5
+    x = np.einsum("ik,k,kj->ij", u1, s, v1t)
+    z = np.einsum("ik,k,kj->ij", u2, s, v2t)
+    x = torch.from_numpy(x).to(torch.float).to(GPU)
+    z = torch.from_numpy(z).to(torch.float).to(GPU)
+    return x, z
+
+
 def _refine(x, z, top, bs, mode="S2T"):
     with torch.no_grad():
         if mode == "S2T":
