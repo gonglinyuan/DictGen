@@ -1,7 +1,11 @@
+import numpy as np
+import scipy.linalg
 import torch
 import torch.nn as nn
 
 __all__ = ["Discriminator"]
+
+GPU = torch.device("cuda:0")
 
 
 def _clip_elementwise(module):
@@ -10,10 +14,9 @@ def _clip_elementwise(module):
 
 
 def _clip_spectral(module):
-    with torch.no_grad():
-        u, s, vt = torch.svd(module.weight.data)
-        s.clamp_(0.0, 1.0)
-        module.weight.data.copy_(torch.einsum("ik,k,kj->ij", (u, s, vt)))
+    u, s, vt = scipy.linalg.svd(np.array(module.weight.data, dtype=np.float64))
+    w = np.einsum("ik,k,kj->ij", u, s.clip(0.0, 1.0), vt)
+    module.weight.data.copy_(torch.from_numpy(w).to(torch.float).to(GPU))
 
 
 class Discriminator(nn.Module):
