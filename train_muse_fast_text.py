@@ -193,7 +193,7 @@ class Trainer:
             y[self.d_bs:] = 1 - y[self.d_bs:]
         x[0] = self.mapping(x[0])
         if gp:
-            t = torch.FloatTensor(self.d_bs).to(GPU).uniform_(0.0, 1.0)
+            t = torch.FloatTensor(self.d_bs, 1).to(GPU).uniform_(0.0, 1.0).expand_as(x[0])
             z = x[0] * t + x[1] * (1.0 - t)
             x = torch.cat(x, 0)
             return x, y, z
