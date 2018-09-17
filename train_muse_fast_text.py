@@ -247,7 +247,9 @@ class Trainer:
             g = autograd.grad(z_out, z, grad_outputs=torch.ones_like(z_out, device=GPU),
                               retain_graph=True, create_graph=True, only_inputs=True)[0]
             # print(g)
-            gp = torch.mean((g - 1.0) ** 2)
+            print(g.shape)
+            gp = torch.mean((g.norm(p=2, dim=1) - 1.0) ** 2)
+            print(gp.shape)
             print(gp)
             loss += self.d_gp * gp
             if torch.sum(torch.isnan(g).to(torch.float)) >= 1.0:
