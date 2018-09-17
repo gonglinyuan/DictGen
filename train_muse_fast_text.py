@@ -240,20 +240,12 @@ class Trainer:
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
         if self.d_gp > 0:
-            # print(z)
             z.requires_grad_()
             z_out = self.discriminator(z)
-            # print(z_out)
             g = autograd.grad(z_out, z, grad_outputs=torch.ones_like(z_out, device=GPU),
                               retain_graph=True, create_graph=True, only_inputs=True)[0]
-            # print(g)
-            print(g.shape)
             gp = torch.mean((g.norm(p=2, dim=1) - 1.0) ** 2)
-            print(gp.shape)
-            print(gp)
             loss += self.d_gp * gp
-            if torch.sum(torch.isnan(g).to(torch.float)) >= 1.0:
-                exit(-1)
         loss.backward()
         self.d_optimizer.step()
         if self.wgan:
@@ -360,6 +352,9 @@ def main():
     parser.add_argument("--normalize_mid", type=str, default="",
                         help="how to normalize the embedding before refinement")
     parser.add_argument("--normalize_post", type=str, default="", help="how to normalize the embedding after training")
+    # parser.add_argument("--spectral_align_pre", action="store_true", help="spectral align before adv training")
+    parser.add_argument("--spectral_align_mid", action="store_true", help="spectral align before refinement")
+    # parser.add_argument("--spectral_align_post", action="store_true", help="spectral align after refinement")
 
     # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
@@ -468,6 +463,8 @@ def main():
     x = normalize_embeddings(best_x, params.normalize_mid)
     z = normalize_embeddings(best_z, params.normalize_mid)
     # torch.save([x, z], os.path.join("tmp.pth"))
+    if params.spectral_align_mid:
+        x, z = _spectral_alignment(x, z)
     for i in trange(params.r_n_steps):
         x, z = _refine(x, z, top=params.r_top, bs=params.r_bs, mode=params.r_mode)
         valid_metric = dist_mean_cosine(x, z)
