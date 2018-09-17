@@ -240,12 +240,16 @@ class Trainer:
         y_hat = self.discriminator(x)
         loss = self.loss_fn(y_hat, y)
         if self.d_gp > 0:
+            print(z)
             z.requires_grad_()
             z_out = self.discriminator(z)
+            print(z_out)
             g = autograd.grad(z_out, z, grad_outputs=torch.ones_like(z_out, device=GPU),
                               retain_graph=True, create_graph=True, only_inputs=True)[0]
             print(g)
             loss += self.d_gp * torch.mean((g - 1.0) ** 2)
+            if torch.sum(torch.isnan(g).to(torch.float)) >= 1.0:
+                exit(-1)
         loss.backward()
         self.d_optimizer.step()
         if self.wgan:
