@@ -243,7 +243,7 @@ class Trainer:
             z.requires_grad_()
             z_out = self.discriminator(z)
             g = autograd.grad(z_out, z, grad_outputs=torch.ones_like(z_out, device=GPU),
-                              retain_graph=True, create_graph=True, only_inputs=True)
+                              retain_graph=True, create_graph=True, only_inputs=True)[0]
             loss += self.d_gp * torch.mean((g - 1.0) ** 2)
         loss.backward()
         self.d_optimizer.step()
