@@ -144,7 +144,7 @@ def normalize_embeddings_np(emb, types, mean=None):
 
 class Trainer:
     def __init__(self, params, *, n_samples=10000000):
-        self.model = [fastText.load_model(params.path_model_0), fastText.load_model(params.path_model_1)]
+        self.model = [fastText.load_model(params.model_path_0), fastText.load_model(params.model_path_1)]
         self.dic = [list(zip(*self.model[id].get_words(include_freq=True))) for id in [0, 1]]
         x = [np.empty((params.vocab_size, params.emb_dim), dtype=np.float64) for _ in [0, 1]]
         for id in [0, 1]:
