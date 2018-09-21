@@ -150,7 +150,7 @@ class Trainer:
         x = [np.empty((params.vocab_size, params.emb_dim), dtype=np.float64) for _ in [0, 1]]
         for id in [0, 1]:
             for i in range(params.vocab_size):
-                x[id][i, :] = self.model[id].get_word_vector(self.dic[id][0])
+                x[id][i, :] = self.model[id].get_word_vector(self.dic[id][i][0])
             x[id] = normalize_embeddings_np(x[id], params.normalize_pre)
         u0, s0, _ = scipy.linalg.svd(x[0], full_matrices=False)
         u1, s1, _ = scipy.linalg.svd(x[1], full_matrices=False)
