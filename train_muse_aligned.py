@@ -161,7 +161,9 @@ class Trainer:
         else:
             x[0] = u0 @ np.diag(s0)
             x[1] = u1 @ np.diag(s1)
-        self.embedding = [nn.Embedding.from_pretrained(x[id], freeze=True, sparse=True) for id in [0, 1]]
+        self.embedding = [nn.Embedding.from_pretrained(torch.from_numpy(x[id]).to(torch.float).to(GPU),
+                                                       freeze=True, sparse=True)
+                          for id in [0, 1]]
         self.discriminator = Discriminator(params.emb_dim, n_layers=params.d_n_layers, n_units=params.d_n_units,
                                            drop_prob=params.d_drop_prob, drop_prob_input=params.d_drop_prob_input,
                                            leaky=params.d_leaky, batch_norm=params.d_bn).to(GPU)
