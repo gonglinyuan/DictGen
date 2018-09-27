@@ -50,7 +50,7 @@ class Trainer:
     def fast_text_step(self):
         self.ft_optimizer.zero_grad()
         u_b, v_b = self.corpus_data_queue.__next__()
-        s = self.fast_text[id](u_b, v_b)
+        s = self.fast_text(u_b, v_b)
         loss = FastText.loss_fn(s)
         loss.backward()
         self.ft_optimizer.step()
