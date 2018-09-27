@@ -124,6 +124,7 @@ def main():
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
+    parser.add_argument("--split", type=float, help="split ratio for adversarial training")
 
     # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
