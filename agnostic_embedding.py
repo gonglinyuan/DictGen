@@ -157,8 +157,8 @@ def main():
     if not os.path.exists(out_path):
         os.mkdir(out_path)
 
-    corpus_data = CorpusData(os.path.join(params.dataDir, params.data_path_0),
-                             os.path.join(params.dataDir, params.model_path_0),
+    corpus_data = CorpusData(os.path.join(params.dataDir, params.data_path),
+                             os.path.join(params.dataDir, params.model_path),
                              max_ws=params.max_ws, n_ns=params.n_ns, threshold=params.threshold)
     trainer = Trainer(corpus_data, params=params)
     vis = visdom.Visdom(server=f'http://{params.vis_host}', port=params.vis_port,
