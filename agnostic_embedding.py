@@ -4,11 +4,11 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import visdom
 from torch.utils.data import DataLoader
 from tqdm import trange
 
-import torch.optim as optim
 from corpus_data_fast_text import CorpusData, concat_collate
 from discriminator import Discriminator
 from fast_text import FastText
@@ -193,9 +193,13 @@ def main():
                 c, ft_loss, d_loss, a_loss = 0, 0.0, 0.0, 0.0
                 step += 1
         with torch.no_grad():
-            emb = trainer.fast_text.get_input_matrix(-1, params.ft_bs, CPU)
+            emb = trainer.fast_text.get_input_matrix(params.vocab_size, params.ft_bs, CPU)
         if params.checkpoint:
-            torch.save({"dico": dico, "vectors": emb}, os.path.join(out_path, f"epoch{epoch}.pth"))
+            torch.save({
+                "dico": dico,
+                "vectors": emb,
+                "state_dict": trainer.fast_text.state_dict()
+            }, os.path.join(out_path, f"epoch{epoch}.pth"))
     print(params)
 
 
