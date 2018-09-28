@@ -193,7 +193,7 @@ def main():
                 c, ft_loss, d_loss, a_loss = 0, 0.0, 0.0, 0.0
                 step += 1
         with torch.no_grad():
-            emb = trainer.fast_text.get_input_matrix(-1, params.ft_bs)
+            emb = trainer.fast_text.get_input_matrix(-1, params.ft_bs, CPU)
         if params.checkpoint:
             torch.save({"dico": dico, "vectors": emb}, os.path.join(out_path, f"epoch{epoch}.pth"))
     print(params)

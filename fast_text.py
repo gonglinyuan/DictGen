@@ -33,11 +33,14 @@ class FastText(nn.Module):
         # s: FloatGPU[bs, 6]
         return -(F.logsigmoid(s[:, 0]).view(-1) + F.logsigmoid(-s[:, 1:]).sum(1)).mean()
 
-    def get_input_matrix(self, n, bs):
+    def get_input_matrix(self, n, bs, device=None):
         if n == -1:
             n = len(self.model.get_words())
         lst = []
         for i in range(0, n, bs):
             bag, offsets = self.model.get_bag(list(range(i, min(i + bs, n))), self.u.weight.device)
-            lst.append(self.u(bag, offsets))
+            if device is None:
+                lst.append(self.u(bag, offsets))
+            else:
+                lst.append(self.u(bag, offsets).to(device))
         return torch.cat(lst, 0)
