@@ -46,6 +46,7 @@ class Trainer:
         self.vocab_size = params.vocab_size
         self.d_bs = params.d_bs
         self.split = params.split
+        self.align_output = params.align_output
 
     def fast_text_step(self):
         self.ft_optimizer.zero_grad()
@@ -60,12 +61,20 @@ class Trainer:
         vocab_split, bs_split = int(self.vocab_size * self.split), int(self.d_bs * self.split)
         x = (torch.randint(0, vocab_split, size=(bs_split,), dtype=torch.long).tolist() +
              torch.randint(vocab_split, self.vocab_size, size=(self.d_bs - bs_split,), dtype=torch.long).tolist())
-        x = self.fast_text.model.get_bag(x, self.fast_text.u.weight.device)
-        if fix_embedding:
-            with torch.no_grad():
-                x = self.fast_text.u(x[0], x[1]).view(self.d_bs, -1)
+        if self.align_output:
+            x = torch.LongTensor(x).view(self.d_bs, 1).to(GPU)
+            if fix_embedding:
+                with torch.no_grad():
+                    x = self.fast_text.v(x).view(self.d_bs, -1)
+            else:
+                x = self.fast_text.v(x).view(self.d_bs, -1)
         else:
-            x = self.fast_text.u(x[0], x[1]).view(self.d_bs, -1)
+            x = self.fast_text.model.get_bag(x, self.fast_text.u.weight.device)
+            if fix_embedding:
+                with torch.no_grad():
+                    x = self.fast_text.u(x[0], x[1]).view(self.d_bs, -1)
+            else:
+                x = self.fast_text.u(x[0], x[1]).view(self.d_bs, -1)
         y = torch.FloatTensor(self.d_bs).to(GPU).uniform_(0.0, self.smooth)
         if reverse:
             y[:bs_split] = 1 - y[:bs_split]
@@ -119,12 +128,13 @@ def main():
 
     # Global settings
     parser.add_argument("--lang", type=str, help="language")
-    parser.add_argument("--vocab_size", type=int, help="size of output vocabulary")
+    parser.add_argument("--vocab_size", type=int, help="size of vocabulary to sample")
     parser.add_argument("--emb_dim", type=int, help="dimensions of the embedding")
     parser.add_argument("--n_epochs", type=int, help="number of epochs")
     parser.add_argument("--n_steps", type=int, help="number of steps per epoch")
     parser.add_argument("--smooth", type=float, help="label smooth for adversarial training")
     parser.add_argument("--split", type=float, help="split ratio for adversarial training")
+    parser.add_argument("--align_output", action="store_true", help="align output embeddings")
 
     # Skip-gram settings
     parser.add_argument("--max_ws", type=int, help="max window size")
@@ -182,7 +192,7 @@ def main():
                          win="a_loss", env=params.out_path, opts={"title": "a_loss"}, update="append")
                 c, ft_loss, d_loss, a_loss = 0, 0.0, 0.0, 0.0
                 step += 1
-        emb = trainer.fast_text.get_input_matrix(params.vocab_size, params.ft_bs)
+        emb = trainer.fast_text.get_input_matrix(-1, params.ft_bs)
         if params.checkpoint:
             torch.save({"dico": dico, "vectors": emb}, os.path.join(out_path, f"epoch{epoch}.pth"))
     print(params)

@@ -34,6 +34,8 @@ class FastText(nn.Module):
         return -(F.logsigmoid(s[:, 0]).view(-1) + F.logsigmoid(-s[:, 1:]).sum(1)).mean()
 
     def get_input_matrix(self, n, bs):
+        if n == -1:
+            n = len(self.model.get_words())
         lst = []
         for i in range(0, n, bs):
             bag, offsets = self.model.get_bag(list(range(i, min(i + bs, n))), self.u.weight.device)
