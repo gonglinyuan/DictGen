@@ -16,6 +16,7 @@ class WordSampler:
             for _ in range(int(c * self.n_urns / z)):
                 self.urn[j] = i
                 j += 1
+        self.n_urns = j
         self.urn = self.urn[:j]
         np.random.shuffle(self.urn)
         self.p = 0
